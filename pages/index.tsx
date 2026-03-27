@@ -1466,7 +1466,7 @@ function RankingsScreen({ onBack }: { onBack: () => void }) {
    PAYMENT SCREEN
 ════════════════════════════════════════════════════ */
 type PaymentTab = 'summary' | 'add' | 'import' | 'weights';
-type SummaryMode = 'monthly' | 'weekly';
+type SummaryMode = 'monthly' | 'weekly' | 'range';
 
 interface PlayerSummary {
   name: string;
@@ -1501,6 +1501,8 @@ function PaymentScreen({ onBack, tournamentPlayers }: { onBack: () => void; tour
   /* ── Summary state ── */
   const [summaryMode, setSummaryMode] = useState<SummaryMode>('monthly');
   const [summaryRef,  setSummaryRef]  = useState(currentMonthRef());
+  const [rangeFrom,   setRangeFrom]   = useState(() => new Date().toISOString().slice(0, 10));
+  const [rangeTo,     setRangeTo]     = useState(() => new Date().toISOString().slice(0, 10));
   const [summary,     setSummary]     = useState<SummaryData | null>(null);
   const [summLoading, setSummLoading] = useState(false);
   const [showRounded, setShowRounded] = useState(false);   // global round toggle for summary tab
@@ -1585,16 +1587,19 @@ function PaymentScreen({ onBack, tournamentPlayers }: { onBack: () => void; tour
     });
   }, []);
 
-  /* ── load summary when tab/mode/ref changes ── */
+  /* ── load summary when tab/mode/ref/range changes ── */
   useEffect(() => {
     if (tab !== 'summary') return;
+    if (summaryMode === 'range' && (!rangeFrom || !rangeTo || rangeFrom > rangeTo)) return;
     setSummLoading(true);
     setSummary(null);
-    const qs = `mode=${summaryMode}&ref=${summaryRef}`;
+    const qs = summaryMode === 'range'
+      ? `mode=range&from=${rangeFrom}&to=${rangeTo}`
+      : `mode=${summaryMode}&ref=${summaryRef}`;
     fetch(`/api/payment/summary?${qs}`)
       .then(r => r.json())
       .then((data: SummaryData) => { setSummary(data); setSummLoading(false); });
-  }, [tab, summaryMode, summaryRef]);
+  }, [tab, summaryMode, summaryRef, rangeFrom, rangeTo]);
 
   /* ── load weights when tab switches ── */
   useEffect(() => {
@@ -1673,7 +1678,8 @@ function PaymentScreen({ onBack, tournamentPlayers }: { onBack: () => void; tour
   /* ── mode-ref sync ── */
   function handleModeChange(mode: SummaryMode) {
     setSummaryMode(mode);
-    setSummaryRef(mode === 'monthly' ? currentMonthRef() : currentWeekRef());
+    if (mode === 'monthly') setSummaryRef(currentMonthRef());
+    else if (mode === 'weekly') setSummaryRef(currentWeekRef());
   }
 
   const TABS: [PaymentTab, string][] = [
@@ -1877,12 +1883,31 @@ function PaymentScreen({ onBack, tournamentPlayers }: { onBack: () => void; tour
               <div className="pills" style={{ margin: 0 }}>
                 <button className={`pill${summaryMode === 'monthly' ? ' active' : ''}`} onClick={() => handleModeChange('monthly')}>📅 Monthly</button>
                 <button className={`pill${summaryMode === 'weekly'  ? ' active' : ''}`} onClick={() => handleModeChange('weekly')}>📆 Weekly</button>
+                <button className={`pill${summaryMode === 'range'   ? ' active' : ''}`} onClick={() => handleModeChange('range')}>📆 Range</button>
               </div>
 
-              {summaryMode === 'monthly' ? (
+              {summaryMode === 'monthly' && (
                 <input type="month" className="input" style={{ width: 160 }} value={summaryRef} onChange={({ target }: { target: HTMLInputElement }) => setSummaryRef(target.value)} />
-              ) : (
+              )}
+              {summaryMode === 'weekly' && (
                 <input type="week" className="input" style={{ width: 180 }} value={summaryRef} onChange={({ target }: { target: HTMLInputElement }) => setSummaryRef(target.value)} />
+              )}
+              {summaryMode === 'range' && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <input
+                    type="date" className="input" style={{ width: 150 }}
+                    value={rangeFrom}
+                    max={rangeTo}
+                    onChange={({ target }: { target: HTMLInputElement }) => setRangeFrom(target.value)}
+                  />
+                  <span style={{ fontSize: 13, color: 'var(--text3)' }}>–</span>
+                  <input
+                    type="date" className="input" style={{ width: 150 }}
+                    value={rangeTo}
+                    min={rangeFrom}
+                    onChange={({ target }: { target: HTMLInputElement }) => setRangeTo(target.value)}
+                  />
+                </div>
               )}
 
               <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, cursor: 'pointer', marginLeft: 'auto' }}>

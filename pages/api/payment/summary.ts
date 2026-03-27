@@ -5,9 +5,11 @@
  * each player owes in total.
  *
  * Query params:
- *   mode = "monthly" | "weekly"   (default: "monthly")
+ *   mode = "monthly" | "weekly" | "range"   (default: "monthly")
  *   ref  = "YYYY-MM"              for monthly  (e.g. "2026-03")
  *        = "YYYY-Www"             for weekly   (e.g. "2026-W13")
+ *   from = "YYYY-MM-DD"           for range (inclusive start)
+ *   to   = "YYYY-MM-DD"           for range (inclusive end)
  *
  * Response:
  * {
@@ -40,12 +42,20 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(405).end();
   }
 
-  const { mode = 'monthly', ref } = req.query as { mode?: string; ref?: string };
+  const { mode = 'monthly', ref, from, to } = req.query as { mode?: string; ref?: string; from?: string; to?: string };
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const filter: Record<string, any> = {};
   let period = '';
 
-  if (mode === 'weekly' && ref && /^\d{4}-W\d{1,2}$/.test(ref)) {
+  if (mode === 'range' && from && to && /^\d{4}-\d{2}-\d{2}$/.test(from) && /^\d{4}-\d{2}-\d{2}$/.test(to)) {
+    // Date-range filter: sessionDate >= from, sessionDate <= to
+    filter.sessionDate = { $gte: from, $lte: to };
+    const fmt = (d: string) => {
+      const [y, m, day] = d.split('-');
+      return `${day}/${m}/${y}`;
+    };
+    period = from === to ? fmt(from) : `${fmt(from)} – ${fmt(to)}`;
+  } else if (mode === 'weekly' && ref && /^\d{4}-W\d{1,2}$/.test(ref)) {
     const [yearStr, wPart] = ref.split('-W');
     filter.year = Number(yearStr);
     filter.week = Number(wPart);
