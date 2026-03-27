@@ -8,9 +8,10 @@ import {
   buildRoundRobin, getRoundLabelForMatch, findMatch as findMatchInRounds,
   getRRSorted, getCurrentRound, resetMatchCounter,
 } from '@/lib/tournament';
-import type { PlayerDoc, TournamentHistoryDoc } from '@/lib/models';
+import type { PlayerDoc, TournamentHistoryDoc, CourtSessionDoc, PaymentConfigDoc, ImportRow } from '@/lib/models';
+import { parseImportText, formatVND } from '@/lib/payment';
 
-type AppView = 'roster' | 'setup' | 'tournament' | 'champion' | 'history' | 'rankings';
+type AppView = 'roster' | 'setup' | 'tournament' | 'champion' | 'history' | 'rankings' | 'payment';
 
 const INITIAL_TOURNEY: TournamentState = {
   pros: [], beginners: [], teams: [],
@@ -46,8 +47,8 @@ function Card({ children, className = '', style }: { children: React.ReactNode; 
   return <div className={`card ${className}`} style={style}>{children}</div>;
 }
 
-function CardTitle({ children }: { children: React.ReactNode }) {
-  return <div className="card-title">{children}</div>;
+function CardTitle({ children, style }: { children: React.ReactNode; style?: React.CSSProperties }) {
+  return <div className="card-title" style={style}>{children}</div>;
 }
 
 function Badge({ group }: { group: 'pro' | 'beg' }) {
@@ -1116,6 +1117,509 @@ function RankingsScreen({ onBack }: { onBack: () => void }) {
 }
 
 /* ════════════════════════════════════════════════════
+   PAYMENT SCREEN
+════════════════════════════════════════════════════ */
+type PaymentTab = 'summary' | 'import' | 'weights';
+type SummaryMode = 'monthly' | 'weekly';
+
+interface PlayerSummary {
+  name: string;
+  totalOwed: number;
+  totalOwedRounded: number;
+  sessionCount: number;
+}
+
+interface SummaryData {
+  period: string;
+  totalCost: number;
+  sessions: CourtSessionDoc[];
+  players: PlayerSummary[];
+}
+
+/* ── helpers ── */
+function currentMonthRef() { return new Date().toISOString().slice(0, 7); }
+function currentWeekRef() {
+  const d = new Date();
+  const year = d.getFullYear();
+  // ISO week via getISOWeek-alike inline
+  const tmp = new Date(d); tmp.setHours(0,0,0,0);
+  tmp.setDate(tmp.getDate() + 3 - ((tmp.getDay() + 6) % 7));
+  const jan4 = new Date(tmp.getFullYear(), 0, 4);
+  const week = 1 + Math.round(((tmp.getTime() - jan4.getTime()) / 86400000 - 3 + ((jan4.getDay() + 6) % 7)) / 7);
+  return `${year}-W${String(week).padStart(2, '0')}`;
+}
+
+function PaymentScreen({ onBack }: { onBack: () => void }) {
+  const [tab, setTab] = useState<PaymentTab>('summary');
+
+  /* ── Summary state ── */
+  const [summaryMode, setSummaryMode] = useState<SummaryMode>('monthly');
+  const [summaryRef,  setSummaryRef]  = useState(currentMonthRef());
+  const [summary,     setSummary]     = useState<SummaryData | null>(null);
+  const [summLoading, setSummLoading] = useState(false);
+  const [showRounded, setShowRounded] = useState(false);   // global round toggle for summary tab
+
+  /* ── Import state ── */
+  const [importText,    setImportText]    = useState('');
+  const [parsedRows,    setParsedRows]    = useState<ImportRow[]>([]);
+  const [parseErrors,   setParseErrors]   = useState<{ row: number; message: string }[]>([]);
+  const [importing,     setImporting]     = useState(false);
+  const [importResult,  setImportResult]  = useState<string | null>(null);
+  const [knownPlayers,  setKnownPlayers]  = useState<string[]>([]);
+
+  /* ── Weights state ── */
+  const [allPlrs,   setAllPlrs]   = useState<PlayerDoc[]>([]);
+  const [configs,   setConfigs]   = useState<PaymentConfigDoc[]>([]);
+  const [wLoading,  setWLoading]  = useState(false);
+  const [editWeights, setEditWeights] = useState<Record<string, string>>({});  // name → input string
+  const [savingWeight, setSavingWeight] = useState<string | null>(null);
+
+  /* ── load known players on mount (for import preview validation) ── */
+  useEffect(() => {
+    fetch('/api/players').then(r => r.json()).then((data: PlayerDoc[]) => {
+      setKnownPlayers(data.map(p => p.name.toLowerCase()));
+    });
+  }, []);
+
+  /* ── load summary when tab/mode/ref changes ── */
+  useEffect(() => {
+    if (tab !== 'summary') return;
+    setSummLoading(true);
+    setSummary(null);
+    const qs = `mode=${summaryMode}&ref=${summaryRef}`;
+    fetch(`/api/payment/summary?${qs}`)
+      .then(r => r.json())
+      .then((data: SummaryData) => { setSummary(data); setSummLoading(false); });
+  }, [tab, summaryMode, summaryRef]);
+
+  /* ── load weights when tab switches ── */
+  useEffect(() => {
+    if (tab !== 'weights') return;
+    setWLoading(true);
+    Promise.all([
+      fetch('/api/players').then(r => r.json()),
+      fetch('/api/payment/configs').then(r => r.json()),
+    ]).then(([players, cfgs]: [PlayerDoc[], PaymentConfigDoc[]]) => {
+      setAllPlrs(players);
+      setConfigs(cfgs);
+      const init: Record<string, string> = {};
+      players.forEach(p => {
+        const cfg = cfgs.find(c => c.playerName.toLowerCase() === p.name.toLowerCase());
+        init[p.name] = String(cfg?.smashWeight ?? 1.0);
+      });
+      setEditWeights(init);
+      setWLoading(false);
+    });
+  }, [tab]);
+
+  /* ── parse import text live ── */
+  function handleImportTextChange(text: string) {
+    setImportText(text);
+    setImportResult(null);
+    if (!text.trim()) { setParsedRows([]); setParseErrors([]); return; }
+    const { rows, errors } = parseImportText(text);
+    setParsedRows(rows);
+    setParseErrors(errors);
+  }
+
+  async function confirmImport() {
+    if (parsedRows.length === 0) return;
+    setImporting(true);
+    setImportResult(null);
+    const res = await fetch('/api/payment/sessions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(parsedRows),
+    });
+    const data = await res.json();
+    setImporting(false);
+    if (res.ok) {
+      setImportResult(`✅ Imported ${data.inserted} session${data.inserted !== 1 ? 's' : ''} successfully.`);
+      setImportText('');
+      setParsedRows([]);
+      setParseErrors([]);
+    } else {
+      setImportResult(`❌ Import failed: ${data.error}`);
+    }
+  }
+
+  async function deleteSession(id: string) {
+    if (!confirm('Delete this session?')) return;
+    await fetch(`/api/payment/sessions/${id}`, { method: 'DELETE' });
+    // refresh summary
+    setSummLoading(true);
+    const qs = `mode=${summaryMode}&ref=${summaryRef}`;
+    fetch(`/api/payment/summary?${qs}`)
+      .then(r => r.json())
+      .then((data: SummaryData) => { setSummary(data); setSummLoading(false); });
+  }
+
+  async function saveWeight(playerName: string) {
+    const val = parseFloat(editWeights[playerName] ?? '1');
+    if (isNaN(val) || val <= 0) return;
+    setSavingWeight(playerName);
+    await fetch('/api/payment/configs', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ playerName, smashWeight: val }),
+    });
+    setSavingWeight(null);
+  }
+
+  /* ── mode-ref sync ── */
+  function handleModeChange(mode: SummaryMode) {
+    setSummaryMode(mode);
+    setSummaryRef(mode === 'monthly' ? currentMonthRef() : currentWeekRef());
+  }
+
+  const TABS: [PaymentTab, string][] = [['summary', '💰 Summary'], ['import', '📥 Import'], ['weights', '⚖️ Weights']];
+
+  return (
+    <div className="anim-fade">
+      <button className="back-btn" onClick={onBack}>← Back</button>
+      <p className="page-title">💰 Payment</p>
+      <p className="page-sub">Track court & shuttlecock costs, split fairly by smash weight.</p>
+
+      <div className="tabs" style={{ marginBottom: 20 }}>
+        {TABS.map(([id, label]) => (
+          <button key={id} className={`tab${tab === id ? ' active' : ''}`} onClick={() => setTab(id)}>{label}</button>
+        ))}
+      </div>
+
+      {/* ═══════════════ SUMMARY TAB ═══════════════ */}
+      {tab === 'summary' && (
+        <div>
+          {/* Filter bar */}
+          <Card style={{ marginBottom: 16 }}>
+            <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 12 }}>
+              <div className="pills" style={{ margin: 0 }}>
+                <button className={`pill${summaryMode === 'monthly' ? ' active' : ''}`} onClick={() => handleModeChange('monthly')}>📅 Monthly</button>
+                <button className={`pill${summaryMode === 'weekly'  ? ' active' : ''}`} onClick={() => handleModeChange('weekly')}>📆 Weekly</button>
+              </div>
+
+              {summaryMode === 'monthly' ? (
+                <input
+                  type="month"
+                  className="input"
+                  style={{ width: 160 }}
+                  value={summaryRef}
+                  onChange={e => setSummaryRef(e.target.value)}
+                />
+              ) : (
+                <input
+                  type="week"
+                  className="input"
+                  style={{ width: 180 }}
+                  value={summaryRef}
+                  onChange={e => setSummaryRef(e.target.value)}
+                />
+              )}
+
+              <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, cursor: 'pointer', marginLeft: 'auto' }}>
+                <input
+                  type="checkbox"
+                  checked={showRounded}
+                  onChange={e => setShowRounded(e.target.checked)}
+                  style={{ width: 16, height: 16 }}
+                />
+                Round to 1 000 ₫
+              </label>
+            </div>
+          </Card>
+
+          {summLoading ? (
+            <EmptyState icon="⏳" text="Loading…" />
+          ) : !summary || summary.sessions.length === 0 ? (
+            <EmptyState icon="📋" text={`No sessions found for ${summaryRef.replace('W', 'Week ')}.`} />
+          ) : (
+            <>
+              {/* Period total card */}
+              <Card style={{ marginBottom: 16 }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+                  <div>
+                    <p style={{ fontWeight: 700, fontSize: 17 }}>{summary.period}</p>
+                    <p style={{ fontSize: 13, color: 'var(--text2)', marginTop: 2 }}>{summary.sessions.length} session{summary.sessions.length !== 1 ? 's' : ''}</p>
+                  </div>
+                  <div style={{ textAlign: 'right' }}>
+                    <p style={{ fontSize: 12, color: 'var(--text3)' }}>Total cost</p>
+                    <p style={{ fontSize: 22, fontWeight: 900, color: 'var(--accent)' }}>{formatVND(summary.totalCost)}</p>
+                  </div>
+                </div>
+              </Card>
+
+              {/* Per-player summary table */}
+              <Card style={{ marginBottom: 20 }}>
+                <CardTitle>👤 Who Owes What</CardTitle>
+                <div style={{ overflowX: 'auto' }}>
+                  <table className="rank-table">
+                    <thead>
+                      <tr>
+                        <th>#</th>
+                        <th>Player</th>
+                        <th className="num">Sessions</th>
+                        <th className="num">Amount Owed (VND)</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {summary.players.map((p, i) => (
+                        <tr key={p.name}>
+                          <td><span className="rank-num n">{i + 1}</span></td>
+                          <td><strong>{p.name}</strong></td>
+                          <td className="num" style={{ color: 'var(--text2)' }}>{p.sessionCount}</td>
+                          <td className="num">
+                            <span style={{ fontWeight: 800, fontSize: 15, color: 'var(--accent2)' }}>
+                              {formatVND(showRounded ? p.totalOwedRounded : p.totalOwed)}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </Card>
+
+              {/* Per-session breakdown */}
+              <CardTitle style={{ marginBottom: 10 }}>📅 Session Breakdown</CardTitle>
+              {summary.sessions.map(s => (
+                <div key={String(s._id)} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r)', marginBottom: 12, overflow: 'hidden' }}>
+                  {/* Session header */}
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 16px', borderBottom: '1px solid var(--border)', flexWrap: 'wrap', gap: 8 }}>
+                    <div>
+                      <span style={{ fontWeight: 700, fontSize: 15 }}>📅 {s.sessionDate}</span>
+                      {s.note && <span style={{ marginLeft: 8, fontSize: 12, color: 'var(--text3)' }}>{s.note}</span>}
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+                      <span style={{ fontSize: 12, color: 'var(--text3)' }}>
+                        Court: {formatVND(s.courtFee)} · {s.numShuttlecocks} × {formatVND(s.shuttlecockUnitPrice)} shuttles
+                      </span>
+                      <span style={{ fontWeight: 800, color: 'var(--accent)' }}>{formatVND(s.totalCost)}</span>
+                      <button
+                        onClick={() => deleteSession(String(s._id))}
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--danger)', fontSize: 16 }}
+                        title="Delete session"
+                      >🗑</button>
+                    </div>
+                  </div>
+
+                  {/* Per-player rows */}
+                  <div style={{ padding: '8px 16px 12px' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 6 }}>
+                      {s.players.map(p => {
+                        const amount = showRounded ? p.amountOwedRounded : p.amountOwed;
+                        return (
+                          <div key={p.name} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'var(--bg3)', borderRadius: 8, padding: '6px 10px', gap: 8 }}>
+                            <div>
+                              <span style={{ fontWeight: 600, fontSize: 13 }}>{p.name}</span>
+                              {p.smashWeight !== 1.0 && (
+                                <span style={{ marginLeft: 5, fontSize: 10, color: 'var(--warn)', fontWeight: 700 }}>⚡{p.smashWeight}×</span>
+                              )}
+                            </div>
+                            <span style={{ fontWeight: 800, color: 'var(--accent2)', fontSize: 13, whiteSpace: 'nowrap' }}>
+                              {formatVND(amount)}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </>
+          )}
+        </div>
+      )}
+
+      {/* ═══════════════ IMPORT TAB ═══════════════ */}
+      {tab === 'import' && (
+        <div>
+          <Card style={{ marginBottom: 16 }}>
+            <CardTitle>📥 Import Sessions</CardTitle>
+            <p style={{ fontSize: 13, color: 'var(--text2)', marginBottom: 12, lineHeight: 1.6 }}>
+              Paste <strong>CSV</strong> or <strong>JSON</strong> data below. Each row = one court session.
+            </p>
+
+            {/* Format hint */}
+            <div style={{ background: 'var(--bg3)', borderRadius: 8, padding: '10px 14px', marginBottom: 14, fontSize: 12, color: 'var(--text3)', lineHeight: 1.8, fontFamily: 'monospace' }}>
+              <strong style={{ color: 'var(--text2)', fontFamily: 'inherit' }}>CSV format:</strong><br />
+              date,players,court_fee,num_shuttlecocks,shuttlecock_unit_price,note<br />
+              2026-03-15,"Alice,Bob,Charlie",300000,3,15000,Saturday session<br />
+              <br />
+              <strong style={{ color: 'var(--text2)', fontFamily: 'inherit' }}>JSON format:</strong><br />
+              {`[{"date":"2026-03-15","players":["Alice","Bob"],"courtFee":300000,"numShuttlecocks":3,"shuttlecockUnitPrice":15000}]`}
+            </div>
+
+            <textarea
+              className="input"
+              style={{ width: '100%', minHeight: 140, fontFamily: 'monospace', fontSize: 12, resize: 'vertical' }}
+              placeholder="Paste CSV or JSON here…"
+              value={importText}
+              onChange={e => handleImportTextChange(e.target.value)}
+            />
+
+            {/* Parse errors */}
+            {parseErrors.length > 0 && (
+              <div style={{ marginTop: 10 }}>
+                {parseErrors.map(e => (
+                  <div key={e.row} style={{ background: 'rgba(239,68,68,.1)', border: '1px solid var(--danger)', borderRadius: 6, padding: '6px 10px', fontSize: 12, color: 'var(--danger)', marginBottom: 4 }}>
+                    ⚠️ {e.message}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Import result message */}
+            {importResult && (
+              <div style={{ marginTop: 10, fontSize: 13, fontWeight: 600, color: importResult.startsWith('✅') ? 'var(--success)' : 'var(--danger)' }}>
+                {importResult}
+              </div>
+            )}
+          </Card>
+
+          {/* Preview table */}
+          {parsedRows.length > 0 && (
+            <Card style={{ marginBottom: 16 }}>
+              <CardTitle>👁 Preview ({parsedRows.length} session{parsedRows.length !== 1 ? 's' : ''})</CardTitle>
+              <div style={{ overflowX: 'auto' }}>
+                <table className="rank-table">
+                  <thead>
+                    <tr>
+                      <th>Date</th>
+                      <th>Players</th>
+                      <th className="num">Court Fee</th>
+                      <th className="num">Shuttlecocks</th>
+                      <th className="num">Unit Price</th>
+                      <th className="num">Total</th>
+                      <th>Note</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {parsedRows.map((row, i) => {
+                      const shuttleTotal = row.numShuttlecocks * row.shuttlecockUnitPrice;
+                      const total        = row.courtFee + shuttleTotal;
+                      const hasUnknown   = row.players.some(p => !knownPlayers.includes(p.toLowerCase()));
+                      return (
+                        <tr key={i} style={hasUnknown ? { background: 'rgba(245,158,11,.07)' } : undefined}>
+                          <td style={{ fontWeight: 600 }}>{row.date}</td>
+                          <td>
+                            {row.players.map(p => (
+                              <span key={p} style={{
+                                display: 'inline-block', margin: '1px 3px', padding: '1px 6px',
+                                borderRadius: 4, fontSize: 11, fontWeight: 600,
+                                background: knownPlayers.includes(p.toLowerCase()) ? 'rgba(57,255,20,.1)' : 'rgba(245,158,11,.2)',
+                                color: knownPlayers.includes(p.toLowerCase()) ? 'var(--accent)' : 'var(--warn)',
+                              }}>
+                                {p}
+                              </span>
+                            ))}
+                          </td>
+                          <td className="num">{formatVND(row.courtFee)}</td>
+                          <td className="num">{row.numShuttlecocks}</td>
+                          <td className="num">{formatVND(row.shuttlecockUnitPrice)}</td>
+                          <td className="num" style={{ fontWeight: 700, color: 'var(--accent2)' }}>{formatVND(total)}</td>
+                          <td style={{ fontSize: 12, color: 'var(--text3)' }}>{row.note ?? '—'}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              {parsedRows.some(row => row.players.some(p => !knownPlayers.includes(p.toLowerCase()))) && (
+                <p style={{ fontSize: 12, color: 'var(--warn)', marginTop: 8 }}>
+                  ⚠️ Orange names are not in the player roster — they will still be imported with default smash weight 1.0.
+                </p>
+              )}
+
+              <div style={{ marginTop: 14 }}>
+                <Btn variant="primary" disabled={importing} onClick={confirmImport}>
+                  {importing ? '⏳ Importing…' : `✅ Confirm Import (${parsedRows.length} session${parsedRows.length !== 1 ? 's' : ''})`}
+                </Btn>
+              </div>
+            </Card>
+          )}
+        </div>
+      )}
+
+      {/* ═══════════════ WEIGHTS TAB ═══════════════ */}
+      {tab === 'weights' && (
+        <div>
+          <Card style={{ marginBottom: 16 }}>
+            <CardTitle>⚖️ Smash Weight Settings</CardTitle>
+            <p style={{ fontSize: 13, color: 'var(--text2)', marginBottom: 16, lineHeight: 1.6 }}>
+              A smash weight <strong>&gt; 1.0</strong> means the player pays a proportionally higher share of the
+              shuttlecock cost — because harder smashers wear them out faster.<br />
+              <span style={{ color: 'var(--text3)', fontSize: 12 }}>
+                e.g. Weight 1.5 = pays 50 % more shuttle cost than someone with weight 1.0 · Court fee is always split equally.
+              </span>
+            </p>
+
+            {wLoading ? (
+              <EmptyState icon="⏳" text="Loading players…" />
+            ) : allPlrs.length === 0 ? (
+              <EmptyState icon="👥" text="No players in roster yet." />
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {allPlrs.map(p => {
+                  const cfg    = configs.find(c => c.playerName.toLowerCase() === p.name.toLowerCase());
+                  const curVal = editWeights[p.name] ?? String(cfg?.smashWeight ?? 1.0);
+                  const saving = savingWeight === p.name;
+
+                  return (
+                    <div key={p.name} style={{ display: 'flex', alignItems: 'center', gap: 12, background: 'var(--bg3)', borderRadius: 10, padding: '10px 14px', flexWrap: 'wrap' }}>
+                      <Badge group={p.group} />
+                      <span style={{ fontWeight: 600, flex: 1, minWidth: 100 }}>{p.name}</span>
+
+                      {/* Quick weight pills */}
+                      <div style={{ display: 'flex', gap: 4 }}>
+                        {[0.8, 1.0, 1.2, 1.5, 2.0].map(w => (
+                          <button
+                            key={w}
+                            onClick={() => setEditWeights(prev => ({ ...prev, [p.name]: String(w) }))}
+                            style={{
+                              padding: '3px 8px', borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: 'pointer',
+                              border: '1px solid var(--border)',
+                              background: parseFloat(curVal) === w ? 'var(--accent)' : 'var(--bg4)',
+                              color:      parseFloat(curVal) === w ? '#0a0e1a' : 'var(--text2)',
+                            }}
+                          >
+                            {w}×
+                          </button>
+                        ))}
+                      </div>
+
+                      {/* Custom input */}
+                      <input
+                        type="number"
+                        min={0.1}
+                        step={0.1}
+                        className="input"
+                        style={{ width: 80, textAlign: 'center' }}
+                        value={curVal}
+                        onChange={e => setEditWeights(prev => ({ ...prev, [p.name]: e.target.value }))}
+                      />
+
+                      <Btn variant="secondary" size="sm" disabled={saving} onClick={() => saveWeight(p.name)}>
+                        {saving ? '⏳' : '💾 Save'}
+                      </Btn>
+
+                      {cfg && (
+                        <span style={{ fontSize: 11, color: 'var(--text3)' }}>
+                          saved: {cfg.smashWeight}×
+                        </span>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </Card>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ════════════════════════════════════════════════════
    ROOT APP
 ════════════════════════════════════════════════════ */
 export default function TournamentApp() {
@@ -1306,6 +1810,7 @@ export default function TournamentApp() {
     view === 'roster'   ? 'Roster'   :
     view === 'history'  ? 'History'  :
     view === 'rankings' ? 'Rankings' :
+    view === 'payment'  ? 'Payment'  :
     view === 'champion' ? 'Finished' :
     view === 'setup'    ? 'Setup'    :
     (getCurrentRound(tourney)?.name ?? 'Finished');
@@ -1317,6 +1822,7 @@ export default function TournamentApp() {
       <header className="app-header">
         <div className="logo">🏸 <span>Smash</span>Tour</div>
         <div className="header-right">
+          <button className="nav-link" onClick={() => setView('payment')}>💰 Payment</button>
           <button className="nav-link" onClick={() => setView('rankings')}>🏅 Rankings</button>
           {view !== 'roster' && view !== 'setup' && (
             <button className="nav-link" onClick={() => setView('history')}>📜 History</button>
@@ -1362,6 +1868,9 @@ export default function TournamentApp() {
         )}
         {view === 'rankings' && (
           <RankingsScreen onBack={() => setView(tourney.rounds.length > 0 ? (tourney.champion ? 'champion' : 'tournament') : 'roster')} />
+        )}
+        {view === 'payment' && (
+          <PaymentScreen onBack={() => setView(tourney.rounds.length > 0 ? (tourney.champion ? 'champion' : 'tournament') : 'roster')} />
         )}
       </div>
     </>

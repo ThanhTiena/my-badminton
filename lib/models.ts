@@ -1,6 +1,75 @@
 import { ObjectId } from 'mongodb';
 
 /* ─────────────────────────────────────────────────────────────
+   PAYMENT — CourtSessionDoc  (collection: "court_sessions")
+
+   One document = one physical court booking (a single day).
+   Stores the raw costs and every player's computed share.
+   Amounts are in VND, stored as exact numbers (2 dp precision).
+───────────────────────────────────────────────────────────── */
+export interface SessionPlayer {
+  name: string;
+  /** Smash-weight snapshot at import time (1.0 = normal, 1.5 = heavy smasher).
+   *  Snapshotted so past records are stable if weights change later. */
+  smashWeight: number;
+  /** Exact VND share = courtShare + shuttleShare (2 dp) */
+  amountOwed: number;
+  /** VND share rounded to nearest 1000 — persisted so all devices agree */
+  amountOwedRounded: number;
+}
+
+export interface CourtSessionDoc {
+  _id?: ObjectId;
+  /** "YYYY-MM-DD" — day the session was played */
+  sessionDate: string;
+  year: number;
+  month: number;   // 1–12
+  week: number;    // ISO week number (1–53)
+  /** Total court rental fee for the session (VND) */
+  courtFee: number;
+  numShuttlecocks: number;
+  shuttlecockUnitPrice: number;
+  /** numShuttlecocks × shuttlecockUnitPrice */
+  shuttlecockTotal: number;
+  /** courtFee + shuttlecockTotal */
+  totalCost: number;
+  players: SessionPlayer[];
+  /** Optional free-text memo (e.g. "Court 3, Saturday session") */
+  note?: string;
+  importedAt: Date;
+}
+
+/* ─────────────────────────────────────────────────────────────
+   PAYMENT — PaymentConfigDoc  (collection: "payment_configs")
+
+   One document per player.  Stores the smash-weight multiplier
+   used when splitting shuttlecock costs.  Kept in its own
+   collection so the tournament PlayerDoc stays clean.
+───────────────────────────────────────────────────────────── */
+export interface PaymentConfigDoc {
+  _id?: ObjectId;
+  /** Matches PlayerDoc.name — used as the lookup key (unique index) */
+  playerName: string;
+  /** 1.0 = standard share; >1 = pays proportionally more shuttlecock cost */
+  smashWeight: number;
+  updatedAt: Date;
+}
+
+/* ─────────────────────────────────────────────────────────────
+   PAYMENT — ImportRow  (client-only, never persisted directly)
+
+   Shape of each row the user imports via CSV or JSON paste.
+───────────────────────────────────────────────────────────── */
+export interface ImportRow {
+  date: string;                 // "YYYY-MM-DD"
+  players: string[];            // player names
+  courtFee: number;             // total court rental VND
+  numShuttlecocks: number;
+  shuttlecockUnitPrice: number; // VND per shuttlecock
+  note?: string;
+}
+
+/* ─────────────────────────────────────────────────────────────
    Player document  (collection: "players")
 ───────────────────────────────────────────────────────────── */
 export interface PlayerDoc {
