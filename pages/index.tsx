@@ -1119,7 +1119,7 @@ function RankingsScreen({ onBack }: { onBack: () => void }) {
 /* ════════════════════════════════════════════════════
    PAYMENT SCREEN
 ════════════════════════════════════════════════════ */
-type PaymentTab = 'summary' | 'import' | 'weights';
+type PaymentTab = 'summary' | 'add' | 'import' | 'weights';
 type SummaryMode = 'monthly' | 'weekly';
 
 interface PlayerSummary {
@@ -1149,8 +1149,8 @@ function currentWeekRef() {
   return `${year}-W${String(week).padStart(2, '0')}`;
 }
 
-function PaymentScreen({ onBack }: { onBack: () => void }) {
-  const [tab, setTab] = useState<PaymentTab>('summary');
+function PaymentScreen({ onBack, tournamentPlayers }: { onBack: () => void; tournamentPlayers: string[] }) {
+  const [tab, setTab] = useState<PaymentTab>(tournamentPlayers.length > 0 ? 'add' : 'summary');
 
   /* ── Summary state ── */
   const [summaryMode, setSummaryMode] = useState<SummaryMode>('monthly');
@@ -1173,6 +1173,59 @@ function PaymentScreen({ onBack }: { onBack: () => void }) {
   const [wLoading,  setWLoading]  = useState(false);
   const [editWeights, setEditWeights] = useState<Record<string, string>>({});  // name → input string
   const [savingWeight, setSavingWeight] = useState<string | null>(null);
+
+  /* ── Manual Add state ── */
+  const [addDate,         setAddDate]         = useState(() => new Date().toISOString().slice(0, 10));
+  const [addCourtFee,     setAddCourtFee]     = useState('');
+  const [addNumShut,      setAddNumShut]      = useState('');
+  const [addUnitPrice,    setAddUnitPrice]    = useState('');
+  const [addNote,         setAddNote]         = useState('');
+  // which tournament players are included in this session (default all)
+  const [addSelected,     setAddSelected]     = useState<Record<string, boolean>>(
+    () => Object.fromEntries(tournamentPlayers.map(n => [n, true]))
+  );
+  const [addSaving,       setAddSaving]       = useState(false);
+  const [addResult,       setAddResult]       = useState<string | null>(null);
+
+  // live cost preview for the Add form
+  const addCourtNum   = parseFloat(addCourtFee)  || 0;
+  const addShutNum    = parseFloat(addNumShut)    || 0;
+  const addUnitNum    = parseFloat(addUnitPrice)  || 0;
+  const addShutTotal  = addShutNum * addUnitNum;
+  const addTotal      = addCourtNum + addShutTotal;
+  const addPlayers    = tournamentPlayers.filter(n => addSelected[n]);
+
+  async function submitAdd() {
+    if (!addDate || addCourtNum < 0 || addShutNum < 0 || addUnitNum < 0 || addPlayers.length === 0) return;
+    setAddSaving(true);
+    setAddResult(null);
+    const row: ImportRow = {
+      date:                 addDate,
+      players:              addPlayers,
+      courtFee:             addCourtNum,
+      numShuttlecocks:      addShutNum,
+      shuttlecockUnitPrice: addUnitNum,
+      note:                 addNote.trim() || undefined,
+    };
+    const res = await fetch('/api/payment/sessions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify([row]),
+    });
+    const data = await res.json();
+    setAddSaving(false);
+    if (res.ok) {
+      setAddResult('✅ Session saved!');
+      setAddCourtFee('');
+      setAddNumShut('');
+      setAddUnitPrice('');
+      setAddNote('');
+      setAddDate(new Date().toISOString().slice(0, 10));
+      setAddSelected(Object.fromEntries(tournamentPlayers.map(n => [n, true])));
+    } else {
+      setAddResult(`❌ ${data.error}`);
+    }
+  }
 
   /* ── load known players on mount (for import preview validation) ── */
   useEffect(() => {
@@ -1272,7 +1325,12 @@ function PaymentScreen({ onBack }: { onBack: () => void }) {
     setSummaryRef(mode === 'monthly' ? currentMonthRef() : currentWeekRef());
   }
 
-  const TABS: [PaymentTab, string][] = [['summary', '💰 Summary'], ['import', '📥 Import'], ['weights', '⚖️ Weights']];
+  const TABS: [PaymentTab, string][] = [
+    ...(tournamentPlayers.length > 0 ? [['add', '➕ Add Session'] as [PaymentTab, string]] : []),
+    ['summary', '💰 Summary'],
+    ['import', '📥 Import'],
+    ['weights', '⚖️ Weights'],
+  ];
 
   return (
     <div className="anim-fade">
@@ -1285,6 +1343,136 @@ function PaymentScreen({ onBack }: { onBack: () => void }) {
           <button key={id} className={`tab${tab === id ? ' active' : ''}`} onClick={() => setTab(id)}>{label}</button>
         ))}
       </div>
+
+      {/* ═══════════════ ADD SESSION TAB ═══════════════ */}
+      {tab === 'add' && (
+        <div>
+          <Card>
+            <CardTitle>➕ New Session</CardTitle>
+            <p style={{ fontSize: 13, color: 'var(--text2)', marginBottom: 16, lineHeight: 1.6 }}>
+              Record today's court cost for the current tournament players.
+            </p>
+
+            {/* Date + Note row */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 14 }}>
+              <div>
+                <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text2)', display: 'block', marginBottom: 4 }}>📅 Date</label>
+                <input type="date" className="input" style={{ width: '100%' }} value={addDate} onChange={e => setAddDate(e.target.value)} />
+              </div>
+              <div>
+                <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text2)', display: 'block', marginBottom: 4 }}>📝 Note (optional)</label>
+                <input type="text" className="input" style={{ width: '100%' }} placeholder="e.g. Saturday court 3" value={addNote} onChange={e => setAddNote(e.target.value)} />
+              </div>
+            </div>
+
+            {/* Cost fields */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12, marginBottom: 14 }}>
+              <div>
+                <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text2)', display: 'block', marginBottom: 4 }}>🏟 Court Fee (₫)</label>
+                <input
+                  type="number" min={0} className="input" style={{ width: '100%' }}
+                  placeholder="e.g. 300000"
+                  value={addCourtFee}
+                  onChange={e => setAddCourtFee(e.target.value)}
+                />
+              </div>
+              <div>
+                <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text2)', display: 'block', marginBottom: 4 }}>🏸 Shuttlecocks used</label>
+                <input
+                  type="number" min={0} className="input" style={{ width: '100%' }}
+                  placeholder="e.g. 3"
+                  value={addNumShut}
+                  onChange={e => setAddNumShut(e.target.value)}
+                />
+              </div>
+              <div>
+                <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text2)', display: 'block', marginBottom: 4 }}>💲 Price / shuttlecock (₫)</label>
+                <input
+                  type="number" min={0} className="input" style={{ width: '100%' }}
+                  placeholder="e.g. 15000"
+                  value={addUnitPrice}
+                  onChange={e => setAddUnitPrice(e.target.value)}
+                />
+              </div>
+            </div>
+
+            {/* Cost preview */}
+            {addTotal > 0 && (
+              <div style={{ background: 'var(--bg3)', borderRadius: 10, padding: '10px 14px', marginBottom: 16, display: 'flex', gap: 20, flexWrap: 'wrap', alignItems: 'center' }}>
+                <span style={{ fontSize: 13, color: 'var(--text2)' }}>Court: <strong>{formatVND(addCourtNum)}</strong></span>
+                <span style={{ fontSize: 13, color: 'var(--text2)' }}>Shuttles: <strong>{formatVND(addShutTotal)}</strong></span>
+                <span style={{ marginLeft: 'auto', fontSize: 16, fontWeight: 900, color: 'var(--accent)' }}>Total: {formatVND(addTotal)}</span>
+              </div>
+            )}
+
+            {/* Player selection */}
+            <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text2)', display: 'block', marginBottom: 8 }}>
+              👥 Players in this session ({addPlayers.length} selected)
+            </label>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 16 }}>
+              {tournamentPlayers.map(name => {
+                const on = addSelected[name] ?? true;
+                return (
+                  <button
+                    key={name}
+                    onClick={() => setAddSelected(prev => ({ ...prev, [name]: !prev[name] }))}
+                    style={{
+                      padding: '5px 12px', borderRadius: 20, fontSize: 13, fontWeight: 600, cursor: 'pointer',
+                      border: `2px solid ${on ? 'var(--accent)' : 'var(--border)'}`,
+                      background: on ? 'rgba(57,255,20,.12)' : 'var(--bg3)',
+                      color: on ? 'var(--accent)' : 'var(--text3)',
+                      transition: 'all .15s',
+                    }}
+                  >
+                    {on ? '✓ ' : ''}{name}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Per-player preview when all fields filled */}
+            {addTotal > 0 && addPlayers.length > 0 && (
+              <div style={{ marginBottom: 16 }}>
+                <p style={{ fontSize: 12, fontWeight: 600, color: 'var(--text3)', marginBottom: 8, textTransform: 'uppercase', letterSpacing: 1 }}>
+                  Estimated share per player
+                </p>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 6 }}>
+                  {addPlayers.map(name => {
+                    const courtShare   = addCourtNum / addPlayers.length;
+                    // smash weights are unknown at this point (not loaded); show equal split preview
+                    const shutShare    = addShutTotal / addPlayers.length;
+                    const est          = courtShare + shutShare;
+                    return (
+                      <div key={name} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'var(--bg3)', borderRadius: 8, padding: '6px 10px' }}>
+                        <span style={{ fontSize: 13, fontWeight: 600 }}>{name}</span>
+                        <span style={{ fontSize: 13, fontWeight: 800, color: 'var(--accent2)' }}>~{formatVND(Math.round(est / 1000) * 1000)}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+                <p style={{ fontSize: 11, color: 'var(--text3)', marginTop: 6 }}>
+                  * Preview uses equal split. Actual amounts apply saved smash weights.
+                </p>
+              </div>
+            )}
+
+            {addResult && (
+              <p style={{ fontSize: 13, fontWeight: 700, color: addResult.startsWith('✅') ? 'var(--success)' : 'var(--danger)', marginBottom: 12 }}>
+                {addResult}
+              </p>
+            )}
+
+            <Btn
+              variant="primary"
+              size="lg"
+              disabled={addSaving || addPlayers.length === 0 || !addDate || addCourtFee === '' || addNumShut === '' || addUnitPrice === ''}
+              onClick={submitAdd}
+            >
+              {addSaving ? '⏳ Saving…' : '💾 Save Session'}
+            </Btn>
+          </Card>
+        </div>
+      )}
 
       {/* ═══════════════ SUMMARY TAB ═══════════════ */}
       {tab === 'summary' && (
@@ -1870,7 +2058,10 @@ export default function TournamentApp() {
           <RankingsScreen onBack={() => setView(tourney.rounds.length > 0 ? (tourney.champion ? 'champion' : 'tournament') : 'roster')} />
         )}
         {view === 'payment' && (
-          <PaymentScreen onBack={() => setView(tourney.rounds.length > 0 ? (tourney.champion ? 'champion' : 'tournament') : 'roster')} />
+          <PaymentScreen
+            onBack={() => setView(tourney.rounds.length > 0 ? (tourney.champion ? 'champion' : 'tournament') : 'roster')}
+            tournamentPlayers={[...tourney.pros, ...tourney.beginners].map(p => p.name)}
+          />
         )}
       </div>
     </>
