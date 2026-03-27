@@ -10,7 +10,7 @@ import {
 } from '@/lib/tournament';
 import type { PlayerDoc, TournamentHistoryDoc } from '@/lib/models';
 
-type AppView = 'roster' | 'setup' | 'tournament' | 'champion' | 'history';
+type AppView = 'roster' | 'setup' | 'tournament' | 'champion' | 'history' | 'rankings';
 
 const INITIAL_TOURNEY: TournamentState = {
   pros: [], beginners: [], teams: [],
@@ -42,8 +42,8 @@ function Btn({
   );
 }
 
-function Card({ children, className = '' }: { children: React.ReactNode; className?: string }) {
-  return <div className={`card ${className}`}>{children}</div>;
+function Card({ children, className = '', style }: { children: React.ReactNode; className?: string; style?: React.CSSProperties }) {
+  return <div className={`card ${className}`} style={style}>{children}</div>;
 }
 
 function CardTitle({ children }: { children: React.ReactNode }) {
@@ -853,6 +853,154 @@ function HistoryScreen({ onBack }: { onBack: () => void }) {
 }
 
 /* ════════════════════════════════════════════════════
+   RANKINGS SCREEN
+════════════════════════════════════════════════════ */
+function RankingsScreen({ onBack }: { onBack: () => void }) {
+  const [players, setPlayers] = useState<PlayerDoc[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [filter, setFilter] = useState<'all' | 'pro' | 'beg'>('all');
+
+  useEffect(() => {
+    fetch('/api/rankings')
+      .then(r => r.json())
+      .then((data: PlayerDoc[]) => { setPlayers(data); setLoading(false); });
+  }, []);
+
+  const filtered = players.filter(p => filter === 'all' || p.group === filter);
+  const top3 = filtered.slice(0, 3);
+
+  const podiumOrder = top3.length === 3 ? [top3[1], top3[0], top3[2]] : top3; // silver, gold, bronze
+  const podiumRanks = top3.length === 3 ? [2, 1, 3] : [1, 2, 3];
+  const podiumHeights = [44, 60, 32];
+
+  const LEGEND = [
+    { label: 'Win',        val: '+10', pos: true },
+    { label: 'Loss',       val: '+1',  pos: true },
+    { label: 'Title 🏆',   val: '+25', pos: true, gold: true },
+    { label: 'Runner-up',  val: '+10', pos: true },
+    { label: '/pt scored', val: '+1',  pos: true },
+    { label: '/pt conceded', val: '−0.5', pos: false },
+  ];
+
+  function initials(name: string) {
+    return name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2);
+  }
+
+  const rankClass = (i: number) => i === 0 ? 'g' : i === 1 ? 's' : i === 2 ? 'b' : 'n';
+
+  return (
+    <div className="anim-fade">
+      <button className="back-btn" onClick={onBack}>← Back</button>
+      <p className="page-title">🏅 Rankings</p>
+      <p className="page-sub">Lifetime leaderboard — updated automatically after every tournament.</p>
+
+      {/* Score formula legend */}
+      <div className="score-legend">
+        <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: 1, marginRight: 4 }}>Score formula:</span>
+        {LEGEND.map(l => (
+          <span key={l.label} className="score-legend-item">
+            <span className={`score-legend-val ${l.gold ? 'gold' : l.pos ? 'pos' : 'neg'}`}>{l.val}</span>
+            {l.label}
+          </span>
+        ))}
+      </div>
+
+      {/* Group filter */}
+      <div className="pills" style={{ marginBottom: 24 }}>
+        {(['all', 'pro', 'beg'] as const).map(f => (
+          <button key={f} className={`pill${filter === f ? ' active' : ''}`} onClick={() => setFilter(f)}>
+            {f === 'all' ? '🌐 All' : f === 'pro' ? '🥇 Pro' : '🌱 Beginner'}
+          </button>
+        ))}
+      </div>
+
+      {loading ? (
+        <EmptyState icon="⏳" text="Loading rankings…" />
+      ) : filtered.length === 0 ? (
+        <EmptyState icon="🏅" text="No players yet. Complete a tournament to generate rankings." />
+      ) : (
+        <>
+          {/* Podium */}
+          {top3.length >= 2 && (
+            <Card style={{ marginBottom: 24 }}>
+              <div className="podium">
+                {podiumOrder.map((p, i) => {
+                  if (!p) return null;
+                  const rank = podiumRanks[i];
+                  const h    = podiumHeights[i];
+                  return (
+                    <div key={p.name} className="podium-slot">
+                      <span className="podium-medal">{rank === 1 ? '🥇' : rank === 2 ? '🥈' : '🥉'}</span>
+                      <div className={`podium-avatar rank-${rank}`}>{initials(p.name)}</div>
+                      <span className="podium-name">{p.name}</span>
+                      <span className={`podium-score rank-${rank}`}>{p.rankScore ?? 0}</span>
+                      <div className={`podium-block rank-${rank}`} style={{ height: h }}>#{rank}</div>
+                    </div>
+                  );
+                })}
+              </div>
+            </Card>
+          )}
+
+          {/* Full table */}
+          <Card>
+            <CardTitle>📊 Full Leaderboard ({filtered.length})</CardTitle>
+            <div style={{ overflowX: 'auto' }}>
+              <table className="rank-table">
+                <thead>
+                  <tr>
+                    <th style={{ width: 40 }}>#</th>
+                    <th>Player</th>
+                    <th className="num">Score</th>
+                    <th className="num">🏆</th>
+                    <th className="num">W</th>
+                    <th className="num">L</th>
+                    <th className="num">Pts+</th>
+                    <th className="num">Pts−</th>
+                    <th className="num">Played</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filtered.map((p, i) => {
+                    const s = p.stats;
+                    const winRate = s.wins + s.losses > 0
+                      ? Math.round((s.wins / (s.wins + s.losses)) * 100)
+                      : 0;
+                    return (
+                      <tr key={p.name}>
+                        <td><span className={`rank-num ${rankClass(i)}`}>{i + 1}</span></td>
+                        <td>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                            <Badge group={p.group} />
+                            <div>
+                              <strong style={{ fontSize: 14 }}>{p.name}</strong>
+                              <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 1 }}>
+                                {winRate}% win rate · {s.tournamentsPlayed} tournament{s.tournamentsPlayed !== 1 ? 's' : ''}
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="num"><span className="rank-score-big">{p.rankScore ?? 0}</span></td>
+                        <td className="num" style={{ color: '#f59e0b', fontWeight: 700 }}>{s.titles}</td>
+                        <td className="num" style={{ color: 'var(--success)' }}>{s.wins}</td>
+                        <td className="num" style={{ color: 'var(--danger)' }}>{s.losses}</td>
+                        <td className="num" style={{ color: 'var(--accent2)' }}>{s.pointsScored}</td>
+                        <td className="num" style={{ color: 'var(--text3)' }}>{s.pointsConceded}</td>
+                        <td className="num" style={{ color: 'var(--text2)' }}>{s.tournamentsPlayed}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+        </>
+      )}
+    </div>
+  );
+}
+
+/* ════════════════════════════════════════════════════
    ROOT APP
 ════════════════════════════════════════════════════ */
 export default function TournamentApp() {
@@ -995,15 +1143,40 @@ export default function TournamentApp() {
   }
 
   async function saveTournament(ns: TournamentState, champion: Team) {
+    const sorted = getRRSorted(ns.teams, ns.rrStandings);
     const standings = ns.tourneyFormat === 'roundrobin'
-      ? getRRSorted(ns.teams, ns.rrStandings).map((r, i) => ({
+      ? sorted.map((r, i) => ({
           rank: i + 1, name: r.team.name, wins: r.stats.wins, losses: r.stats.losses,
           pts: r.stats.pts, scoreFor: r.stats.scoreFor, scoreAgainst: r.stats.scoreAgainst,
         }))
       : undefined;
+
+    // Runner-up: for RR it's rank-2; for elimination it's the final loser
+    let runnerUp: string | undefined;
+    if (ns.tourneyFormat === 'roundrobin') {
+      runnerUp = sorted[1]?.team.name;
+    } else {
+      // Find the final match and pick the loser
+      const finalRound = ns.rounds[ns.rounds.length - 1];
+      if (finalRound) {
+        const finalMatch = finalRound.matches.find(m => !m.bye && m.completed);
+        if (finalMatch && finalMatch.winner) {
+          const loser = finalMatch.winner.id === finalMatch.teamA.id ? finalMatch.teamB : finalMatch.teamA;
+          runnerUp = loser?.name;
+        }
+      }
+    }
+
     await fetch('/api/history', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ gameType: ns.gameType, format: ns.tourneyFormat, participants: [...ns.pros, ...ns.beginners], champion: champion.name, matches: ns.history, standings }),
+      body: JSON.stringify({
+        gameType: ns.gameType, format: ns.tourneyFormat,
+        participants: [...ns.pros, ...ns.beginners],
+        champion: champion.name,
+        runnerUp,
+        matches: ns.history,
+        standings,
+      }),
     });
   }
 
@@ -1014,7 +1187,13 @@ export default function TournamentApp() {
     setView('setup');
   }
 
-  const headerBadge = view === 'roster' ? 'Roster' : view === 'history' ? 'History' : view === 'champion' ? 'Finished' : view === 'setup' ? 'Setup' : (getCurrentRound(tourney)?.name ?? 'Finished');
+  const headerBadge =
+    view === 'roster'   ? 'Roster'   :
+    view === 'history'  ? 'History'  :
+    view === 'rankings' ? 'Rankings' :
+    view === 'champion' ? 'Finished' :
+    view === 'setup'    ? 'Setup'    :
+    (getCurrentRound(tourney)?.name ?? 'Finished');
 
   return (
     <>
@@ -1023,7 +1202,8 @@ export default function TournamentApp() {
       <header className="app-header">
         <div className="logo">🏸 <span>Smash</span>Tour</div>
         <div className="header-right">
-          {(view === 'tournament' || view === 'champion') && (
+          <button className="nav-link" onClick={() => setView('rankings')}>🏅 Rankings</button>
+          {view !== 'roster' && view !== 'setup' && (
             <button className="nav-link" onClick={() => setView('history')}>📜 History</button>
           )}
           {(view === 'tournament' || view === 'champion') && (
@@ -1064,6 +1244,9 @@ export default function TournamentApp() {
         )}
         {view === 'history' && (
           <HistoryScreen onBack={() => setView(tourney.rounds.length > 0 ? (tourney.champion ? 'champion' : 'tournament') : 'roster')} />
+        )}
+        {view === 'rankings' && (
+          <RankingsScreen onBack={() => setView(tourney.rounds.length > 0 ? (tourney.champion ? 'champion' : 'tournament') : 'roster')} />
         )}
       </div>
     </>

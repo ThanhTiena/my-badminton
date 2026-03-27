@@ -27,7 +27,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       name: name.trim(),
       group,
       createdAt: new Date(),
-      stats: { tournamentsPlayed: 0, wins: 0, losses: 0, titles: 0 },
+      stats: { tournamentsPlayed: 0, wins: 0, losses: 0, titles: 0, runnerUps: 0, pointsScored: 0, pointsConceded: 0 },
+      rankScore: 0,
     };
     const result = await col.insertOne(doc);
     return res.status(201).json({ ...doc, _id: result.insertedId });

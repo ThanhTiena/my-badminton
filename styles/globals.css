@@ -574,3 +574,108 @@ body {
 .row   { display: flex; align-items: center; gap: 8px; }
 .row.wrap { flex-wrap: wrap; }
 .spacer { flex: 1; }
+
+/* ════════════════════════════════════════════════════
+   RANKINGS SCREEN
+════════════════════════════════════════════════════ */
+
+/* Podium top-3 */
+.podium {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 12px;
+  margin-bottom: 32px;
+}
+.podium-slot {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+.podium-avatar {
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 22px; font-weight: 900;
+  border: 3px solid;
+  flex-shrink: 0;
+}
+.podium-avatar.rank-1 { width: 72px; height: 72px; border-color: #f59e0b; background: rgba(245,158,11,.12); color: #f59e0b; }
+.podium-avatar.rank-2 { width: 58px; height: 58px; border-color: #9ca3af; background: rgba(156,163,175,.1);  color: #9ca3af; }
+.podium-avatar.rank-3 { width: 52px; height: 52px; border-color: #92400e; background: rgba(146,64,14,.12);   color: #d97706; }
+
+.podium-name  { font-size: 13px; font-weight: 700; text-align: center; max-width: 80px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.podium-score { font-size: 18px; font-weight: 900; }
+.podium-score.rank-1 { color: #f59e0b; font-size: 22px; }
+.podium-score.rank-2 { color: #9ca3af; }
+.podium-score.rank-3 { color: #d97706; }
+
+.podium-medal { font-size: 22px; }
+
+.podium-block {
+  border-radius: 8px 8px 0 0;
+  width: 72px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 11px; font-weight: 700; letter-spacing: .5px;
+  color: rgba(255,255,255,.5);
+}
+.podium-block.rank-1 { height: 60px; background: linear-gradient(180deg, rgba(245,158,11,.35) 0%, rgba(245,158,11,.12) 100%); border: 1px solid rgba(245,158,11,.4); }
+.podium-block.rank-2 { height: 44px; background: linear-gradient(180deg, rgba(156,163,175,.25) 0%, rgba(156,163,175,.08) 100%); border: 1px solid rgba(156,163,175,.3); }
+.podium-block.rank-3 { height: 32px; background: linear-gradient(180deg, rgba(146,64,14,.3) 0%, rgba(146,64,14,.1) 100%);  border: 1px solid rgba(146,64,14,.35); }
+
+/* Full leaderboard table */
+.rank-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.rank-table th {
+  background: var(--bg3); color: var(--text3);
+  font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px;
+  padding: 9px 14px; text-align: left; border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+.rank-table th.num { text-align: right; }
+.rank-table td { padding: 11px 14px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+.rank-table td.num { text-align: right; font-weight: 600; }
+.rank-table tr:last-child td { border-bottom: none; }
+.rank-table tr:hover td { background: rgba(255,255,255,.02); }
+
+.rank-table tr.me td { background: rgba(57,255,20,.04); }
+.rank-table tr.me td:first-child { border-left: 3px solid var(--accent); }
+
+.rank-num { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; border-radius: 50%; font-size: 12px; font-weight: 800; }
+.rank-num.g { background: #f59e0b; color: #000; }
+.rank-num.s { background: #9ca3af; color: #000; }
+.rank-num.b { background: #92400e; color: #fff; }
+.rank-num.n { background: var(--bg4); color: var(--text3); }
+
+.rank-score-big { font-size: 15px; font-weight: 900; color: var(--accent); }
+.rank-trend-up   { color: var(--success); font-size: 11px; font-weight: 700; }
+.rank-trend-same { color: var(--text3);   font-size: 11px; }
+
+/* Score formula legend */
+.score-legend {
+  display: flex; flex-wrap: wrap; gap: 10px;
+  background: var(--bg3); border: 1px solid var(--border);
+  border-radius: var(--r-sm); padding: 14px 16px;
+  margin-bottom: 20px;
+}
+.score-legend-item {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 12px; color: var(--text2);
+}
+.score-legend-val {
+  font-weight: 800; font-size: 13px;
+  padding: 1px 7px; border-radius: 20px;
+  background: var(--bg4);
+}
+.score-legend-val.pos { color: var(--success); }
+.score-legend-val.neg { color: var(--danger);  }
+.score-legend-val.gold { color: #f59e0b; }
+
+/* Player detail stat chips */
+.stat-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
+.stat-chip {
+  background: var(--bg4); border: 1px solid var(--border);
+  border-radius: 6px; padding: 4px 10px;
+  font-size: 12px; color: var(--text2);
+  display: flex; align-items: center; gap: 4px;
+}
+.stat-chip strong { color: var(--text); font-size: 13px; }

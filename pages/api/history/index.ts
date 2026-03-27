@@ -1,69 +1,73 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import client from '@/lib/mongodb';
-import type { TournamentHistoryDoc } from '@/lib/models';
+import type { TournamentHistoryDoc, PlayerDoc } from '@/lib/models';
+import { computeDeltas, computeRankScore } from '@/lib/scoring';
 
-const DB = 'smashtour';
-const COL = 'tournament_history';
+const DB          = 'smashtour';
+const COL         = 'tournament_history';
 const PLAYERS_COL = 'players';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-  const db = client.db(DB);
+  const db  = client.db(DB);
   const col = db.collection<TournamentHistoryDoc>(COL);
 
+  /* ── GET — list tournaments ── */
   if (req.method === 'GET') {
-    const limit = Math.min(Number(req.query.limit ?? 20), 100);
-    const skip = Number(req.query.skip ?? 0);
+    const limit   = Math.min(Number(req.query.limit ?? 20), 100);
+    const skip    = Number(req.query.skip ?? 0);
     const history = await col.find({}).sort({ createdAt: -1 }).skip(skip).limit(limit).toArray();
-    const total = await col.countDocuments();
+    const total   = await col.countDocuments();
     return res.status(200).json({ history, total });
   }
 
+  /* ── POST — save completed tournament & update all player scores ── */
   if (req.method === 'POST') {
     const body = req.body as TournamentHistoryDoc;
+
     const doc: TournamentHistoryDoc = {
       ...body,
-      createdAt: new Date(),
+      createdAt:   new Date(),
       completedAt: new Date(),
     };
     const result = await col.insertOne(doc);
 
-    // Update participant career stats
-    const playerCol = db.collection(PLAYERS_COL);
-    for (const p of body.participants) {
-      const isChampion = body.champion.split(' & ').some(n => n.trim() === p.name);
-      await playerCol.updateOne(
-        { name: { $regex: `^${p.name}$`, $options: 'i' } },
-        {
-          $inc: {
-            'stats.tournamentsPlayed': 1,
-            'stats.titles': isChampion ? 1 : 0,
-          },
-        }
-      );
-    }
+    // ── Compute per-player stat deltas ──
+    const deltas = computeDeltas(
+      body.matches,
+      body.champion,
+      body.runnerUp,
+      body.participants,
+    );
 
-    // Update win/loss stats from match history
-    const playerWins: Record<string, number> = {};
-    const playerLosses: Record<string, number> = {};
-    for (const m of body.matches) {
-      for (const name of m.winner.split(' & ')) {
-        playerWins[name.trim()] = (playerWins[name.trim()] ?? 0) + 1;
-      }
-      const loser = m.winner === m.teamA ? m.teamB : m.teamA;
-      for (const name of loser.split(' & ')) {
-        playerLosses[name.trim()] = (playerLosses[name.trim()] ?? 0) + 1;
-      }
-    }
-    for (const [name, wins] of Object.entries(playerWins)) {
+    // ── Apply deltas to each player in MongoDB ──
+    const playerCol = db.collection<PlayerDoc>(PLAYERS_COL);
+
+    for (const [name, delta] of Array.from(deltas.entries())) {
+      // Fetch current stats so we can recompute rankScore
+      const player = await playerCol.findOne({ name: { $regex: `^${name}$`, $options: 'i' } });
+      if (!player) continue;
+
+      const newStats: PlayerDoc['stats'] = {
+        tournamentsPlayed: (player.stats?.tournamentsPlayed ?? 0) + delta.tournamentsPlayed,
+        wins:              (player.stats?.wins              ?? 0) + delta.wins,
+        losses:            (player.stats?.losses            ?? 0) + delta.losses,
+        titles:            (player.stats?.titles            ?? 0) + delta.titles,
+        runnerUps:         (player.stats?.runnerUps         ?? 0) + delta.runnerUps,
+        pointsScored:      (player.stats?.pointsScored      ?? 0) + delta.pointsScored,
+        pointsConceded:    (player.stats?.pointsConceded    ?? 0) + delta.pointsConceded,
+      };
+
+      const rankScore = computeRankScore(newStats);
+
       await playerCol.updateOne(
         { name: { $regex: `^${name}$`, $options: 'i' } },
-        { $inc: { 'stats.wins': wins } }
-      );
-    }
-    for (const [name, losses] of Object.entries(playerLosses)) {
-      await playerCol.updateOne(
-        { name: { $regex: `^${name}$`, $options: 'i' } },
-        { $inc: { 'stats.losses': losses } }
+        {
+          $set: {
+            stats:          newStats,
+            rankScore,
+            rankUpdatedAt:  new Date(),
+          },
+        },
       );
     }
 

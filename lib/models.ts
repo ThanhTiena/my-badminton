@@ -2,26 +2,39 @@ import { ObjectId } from 'mongodb';
 
 /* ─────────────────────────────────────────────────────────────
    Player document  (collection: "players")
-   Stores every player ever registered in the system.
-   Re-used across tournaments — the user picks who joins each time.
 ───────────────────────────────────────────────────────────── */
 export interface PlayerDoc {
   _id?: ObjectId;
-  name: string;           // display name, unique
-  group: 'pro' | 'beg';  // skill group
+  name: string;
+  group: 'pro' | 'beg';
   createdAt: Date;
-  // cumulative career stats updated after every tournament
+
+  /** Raw career counters — incremented after every tournament */
   stats: {
     tournamentsPlayed: number;
-    wins: number;
-    losses: number;
-    titles: number;       // tournaments won
+    wins: number;           // match wins
+    losses: number;         // match losses
+    titles: number;         // tournament 1st places
+    runnerUps: number;      // tournament 2nd places
+    pointsScored: number;   // total shuttle-points scored across all matches
+    pointsConceded: number; // total shuttle-points conceded
   };
+
+  /**
+   * Computed ranking score — recalculated and stored whenever a
+   * tournament finishes.  Formula (see lib/scoring.ts):
+   *
+   *   score = wins×10 + losses×1 + titles×25 + runnerUps×10
+   *         + pointsScored×1 − pointsConceded×0.5
+   */
+  rankScore: number;
+
+  /** Snapshot of the last time rankScore was recalculated */
+  rankUpdatedAt?: Date;
 }
 
 /* ─────────────────────────────────────────────────────────────
    TournamentHistory document  (collection: "tournament_history")
-   One document per completed tournament.
 ───────────────────────────────────────────────────────────── */
 export interface TournamentHistoryDoc {
   _id?: ObjectId;
@@ -29,10 +42,9 @@ export interface TournamentHistoryDoc {
   completedAt?: Date;
   gameType: 'singles' | 'doubles';
   format: 'elimination' | 'roundrobin';
-  // snapshot of participants (names + groups at time of play)
   participants: { name: string; group: 'pro' | 'beg' }[];
-  champion: string;       // winning team/player name
-  // full match log
+  champion: string;
+  runnerUp?: string;    // 2nd place (final loser or RR rank-2 team)
   matches: {
     round: string;
     teamA: string;
@@ -41,7 +53,6 @@ export interface TournamentHistoryDoc {
     scoreB: number;
     winner: string;
   }[];
-  // final RR standings (null for elimination)
   standings?: {
     rank: number;
     name: string;
