@@ -54,6 +54,15 @@ function Badge({ group }: { group: 'pro' | 'beg' }) {
   return <span className={`badge badge-${group}`}>{group === 'pro' ? 'PRO' : 'BEG'}</span>;
 }
 
+/* ── Name display — full text, wraps naturally ── */
+function TruncName({ name, className = '', style }: { name: string; maxWidth?: number; className?: string; style?: React.CSSProperties }) {
+  return (
+    <span className={className} style={{ wordBreak: 'break-word', whiteSpace: 'normal', ...style }}>
+      {name}
+    </span>
+  );
+}
+
 function EmptyState({ icon, text }: { icon: string; text: string }) {
   return (
     <div className="empty-state">
@@ -394,6 +403,25 @@ function SetupScreen({
 }
 
 /* ════════════════════════════════════════════════════
+   BADMINTON SCORE HELPERS
+════════════════════════════════════════════════════ */
+function getBadmintonStatus(a: number, b: number): { canWinA: boolean; canWinB: boolean; isDeuce: boolean; isGamePt: boolean } {
+  const isDeuce   = a >= 20 && b >= 20;
+  const canWinA   = (a >= 20 && a > b) || a >= 29;   // at 30 anyone wins
+  const canWinB   = (b >= 20 && b > a) || b >= 29;
+  const isGamePt  = canWinA || canWinB;
+  return { canWinA, canWinB, isDeuce, isGamePt };
+}
+
+function isBadmintonWinner(a: number, b: number, side: 'A' | 'B'): boolean {
+  const s = side === 'A' ? a : b;
+  const o = side === 'A' ? b : a;
+  if (s >= 30) return true;           // cap
+  if (s >= 21 && s - o >= 2) return true;  // normal win or post-deuce
+  return false;
+}
+
+/* ════════════════════════════════════════════════════
    MATCH CARD  — handles both live & completed states
 ════════════════════════════════════════════════════ */
 function MatchCard({
@@ -403,11 +431,14 @@ function MatchCard({
   onScoreChange: (id: string, t: 'A'|'B', d: number) => void;
   onMarkWinner: (id: string, s: 'A'|'B') => void;
 }) {
+  const [inputA, setInputA] = useState('');
+  const [inputB, setInputB] = useState('');
+
   if (match.bye) {
     return (
       <div className="match-card bye-card">
         <p className="match-status">🟡 BYE</p>
-        <p style={{ fontWeight: 700, fontSize: 15, marginBottom: 8 }}>{match.teamA.name}</p>
+        <TruncName name={match.teamA.name} className="match-team-name" style={{ display: 'block', textAlign: 'center', marginBottom: 8 } as React.CSSProperties} />
         <p style={{ textAlign: 'center', color: 'var(--text3)', fontSize: 13 }}>🏸 Advances automatically</p>
       </div>
     );
@@ -424,55 +455,139 @@ function MatchCard({
         <p className="match-status">✅ COMPLETED</p>
         <div className="match-versus">
           <div className="match-team">
-            <p className={`match-team-name ${winnerA ? 'team-winner' : 'team-loser'}`}>{nameA}{winnerA ? ' 🏆' : ''}</p>
-            {gameType === 'doubles' && <p className="match-team-sub">{match.teamA.players.join(' & ')}</p>}
+            <p className={`match-team-name ${winnerA ? 'team-winner' : 'team-loser'}`}>
+              <TruncName name={nameA} />{winnerA ? ' 🏆' : ''}
+            </p>
+            {gameType === 'doubles' && <p className="match-team-sub"><TruncName name={match.teamA.players.join(' & ')} maxWidth={150} /></p>}
           </div>
           <div className="vs-circle">VS</div>
           <div className="match-team">
-            <p className={`match-team-name ${winnerB ? 'team-winner' : 'team-loser'}`}>{nameB}{winnerB ? ' 🏆' : ''}</p>
-            {gameType === 'doubles' && <p className="match-team-sub">{match.teamB!.players.join(' & ')}</p>}
+            <p className={`match-team-name ${winnerB ? 'team-winner' : 'team-loser'}`}>
+              <TruncName name={nameB} />{winnerB ? ' 🏆' : ''}
+            </p>
+            {gameType === 'doubles' && <p className="match-team-sub"><TruncName name={match.teamB!.players.join(' & ')} maxWidth={150} /></p>}
           </div>
         </div>
         <div className="completed-result">
-          <p className="completed-winner">🏆 {match.winner!.name} wins</p>
+          <p className="completed-winner">🏆 <TruncName name={match.winner!.name} maxWidth={180} /> wins</p>
           <p className="completed-score">{match.scoreA} — {match.scoreB}</p>
         </div>
       </div>
     );
   }
 
+  const sA = match.scoreA;
+  const sB = match.scoreB;
+  const { canWinA, canWinB, isDeuce, isGamePt } = getBadmintonStatus(sA, sB);
+  const leadA = sA > sB;
+  const leadB = sB > sA;
+
+  const addScore = (side: 'A' | 'B', delta: number) => {
+    const cur = side === 'A' ? sA : sB;
+    const next = Math.max(0, Math.min(30, cur + delta));
+    const diff = next - cur;
+    if (diff !== 0) onScoreChange(match.id, side, diff);
+  };
+
+  const applyInput = (side: 'A' | 'B', raw: string) => {
+    const v = parseInt(raw, 10);
+    if (isNaN(v)) return;
+    const clamped = Math.max(0, Math.min(30, v));
+    const cur = side === 'A' ? sA : sB;
+    const diff = clamped - cur;
+    if (diff !== 0) onScoreChange(match.id, side, diff);
+    if (side === 'A') setInputA(''); else setInputB('');
+  };
+
+  const autoWinA = isBadmintonWinner(sA, sB, 'A');
+  const autoWinB = isBadmintonWinner(sA, sB, 'B');
+
   return (
     <div className="match-card">
       <p className="match-status">⚡ LIVE · {roundLabel}</p>
 
-      <div className="match-versus">
-        <div className="match-team">
-          <p className="match-team-name">{nameA}</p>
-          {gameType === 'doubles' && <p className="match-team-sub">{match.teamA.players.join(' & ')}</p>}
+      {/* Badge row */}
+      {(isGamePt || isDeuce) && (
+        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 8 }}>
+          {isDeuce && !isGamePt && <span className="score-badge deuce">DEUCE</span>}
+          {isGamePt && <span className="score-badge game-pt">GAME POINT</span>}
         </div>
-        <div className="vs-circle">VS</div>
-        <div className="match-team">
-          <p className="match-team-name">{nameB}</p>
-          {gameType === 'doubles' && <p className="match-team-sub">{match.teamB!.players.join(' & ')}</p>}
-        </div>
-      </div>
+      )}
 
-      <div className="score-row">
-        {(['A', 'B'] as const).map((side, si) => (
-          <>
-            {si === 1 && <span key="dash" className="score-dash">—</span>}
-            <div key={side} className="score-control">
-              <button className="score-btn" onClick={() => onScoreChange(match.id, side, -1)}>−</button>
-              <span className="score-num">{side === 'A' ? match.scoreA : match.scoreB}</span>
-              <button className="score-btn" onClick={() => onScoreChange(match.id, side, 1)}>+</button>
+      {/* Scoreboard — two tappable sides */}
+      <div className="scoreboard">
+        {(['A', 'B'] as const).map(side => {
+          const score  = side === 'A' ? sA : sB;
+          const name   = side === 'A' ? nameA : nameB;
+          const players = side === 'A' ? match.teamA.players : match.teamB!.players;
+          const lead   = side === 'A' ? leadA : leadB;
+          const canWin = side === 'A' ? canWinA : canWinB;
+          const inpVal = side === 'A' ? inputA : inputB;
+          const setInp = side === 'A' ? setInputA : setInputB;
+
+          return (
+            <div key={side} className={`score-side${lead ? ' winning' : ''}`}>
+              {/* Team name */}
+              <TruncName name={name} maxWidth={120} className="match-team-name" />
+              {gameType === 'doubles' && (
+                <TruncName name={players.join(' & ')} maxWidth={130} className="match-team-sub" style={{ display: 'block', marginBottom: 4 } as React.CSSProperties} />
+              )}
+
+              {/* Large tap button */}
+              <button
+                className={`score-tap-btn${canWin ? ' can-win' : ''}`}
+                onClick={() => addScore(side, 1)}
+                title="Tap to add 1 point"
+              >
+                {score}
+              </button>
+
+              {/* Quick-add row */}
+              <div className="quick-add-row">
+                <button className="quick-btn" onClick={() => addScore(side, -1)} title="−1">−1</button>
+                <button className="quick-btn" onClick={() => addScore(side, 2)}  title="+2">+2</button>
+                <button className="quick-btn" onClick={() => addScore(side, 5)}  title="+5">+5</button>
+              </div>
+
+              {/* Direct score input */}
+              <input
+                className="score-input"
+                type="number"
+                min={0}
+                max={30}
+                placeholder="set"
+                value={inpVal}
+                onChange={e => setInp(e.target.value)}
+                onBlur={() => applyInput(side, inpVal)}
+                onKeyDown={e => e.key === 'Enter' && applyInput(side, inpVal)}
+              />
             </div>
-          </>
-        ))}
+          );
+        })}
       </div>
 
-      <div className="winner-btns">
-        <Btn variant="success" onClick={() => onMarkWinner(match.id, 'A')}>🏆 {nameA}</Btn>
-        <Btn variant="orange"  onClick={() => onMarkWinner(match.id, 'B')}>🏆 {nameB}</Btn>
+      {/* Undo + declare winner row */}
+      <div className="score-meta-row">
+        <button className="undo-btn" onClick={() => {
+          // Undo: subtract 1 from whichever side scored last (higher score, else A)
+          if (sA > sB) onScoreChange(match.id, 'A', -1);
+          else if (sB > sA) onScoreChange(match.id, 'B', -1);
+          else if (sA > 0) onScoreChange(match.id, 'A', -1);
+        }}>↩ Undo</button>
+
+        {(autoWinA || autoWinB) ? (
+          <button
+            className="declare-winner-btn"
+            onClick={() => onMarkWinner(match.id, autoWinA ? 'A' : 'B')}
+          >
+            🏆 Declare {autoWinA ? nameA : nameB}
+          </button>
+        ) : (
+          <div className="winner-btns" style={{ flex: 1 }}>
+            <Btn variant="success" onClick={() => onMarkWinner(match.id, 'A')}>🏆 <TruncName name={nameA} maxWidth={80} /></Btn>
+            <Btn variant="orange"  onClick={() => onMarkWinner(match.id, 'B')}>🏆 <TruncName name={nameB} maxWidth={80} /></Btn>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -497,8 +612,8 @@ function BracketView({ rounds, currentRoundIdx }: { rounds: Round[]; currentRoun
                   const bWon = m.winner?.id === m.teamB?.id;
                   return (
                     <div key={m.id} className="bracket-match-group">
-                      <div className={`bracket-slot${aWon ? ' winner' : isCur && !m.completed && !m.bye ? ' current anim-pulse' : ''}`}>{m.teamA?.name ?? '?'}</div>
-                      {!m.bye && <div className={`bracket-slot${bWon ? ' winner' : isCur && !m.completed ? ' current anim-pulse' : ''}`}>{m.teamB?.name ?? '?'}</div>}
+                      <div className={`bracket-slot${aWon ? ' winner' : isCur && !m.completed && !m.bye ? ' current anim-pulse' : ''}`}><TruncName name={m.teamA?.name ?? '?'} maxWidth={100} /></div>
+                      {!m.bye && <div className={`bracket-slot${bWon ? ' winner' : isCur && !m.completed ? ' current anim-pulse' : ''}`}><TruncName name={m.teamB?.name ?? '?'} maxWidth={100} /></div>}
                     </div>
                   );
                 })}
@@ -533,8 +648,8 @@ function StandingsView({ teams, rrStandings, gameType }: { teams: Team[]; rrStan
                 <tr key={team.id} className={i === 0 ? 'rank-top' : ''}>
                   <td><span className={`rank-badge${badge ? ` ${badge}` : ''}`}>{i + 1}</span></td>
                   <td>
-                    <strong>{team.name}</strong>
-                    {gameType === 'doubles' && <><br /><span style={{ fontSize: 12, color: 'var(--text2)' }}>{team.players.join(' & ')}</span></>}
+                    <strong><TruncName name={team.name} maxWidth={150} /></strong>
+                    {gameType === 'doubles' && <><br /><TruncName name={team.players.join(' & ')} maxWidth={150} style={{ fontSize: 12, color: 'var(--text2)' } as React.CSSProperties} /></>}
                   </td>
                   <td className="num" style={{ color: 'var(--success)' }}>{stats.wins}</td>
                   <td className="num" style={{ color: 'var(--danger)' }}>{stats.losses}</td>
