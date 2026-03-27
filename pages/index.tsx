@@ -3,16 +3,13 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import {
   type Player, type Team, type Match, type Round, type RRStats,
-  type HistoryEntry, type GameType, type TourneyFormat, type TournamentState,
+  type GameType, type TourneyFormat, type TournamentState,
   shuffleArr, buildTeams, buildEliminationRounds, advanceElimination,
   buildRoundRobin, getRoundLabelForMatch, findMatch as findMatchInRounds,
   getRRSorted, getCurrentRound, resetMatchCounter,
 } from '@/lib/tournament';
 import type { PlayerDoc, TournamentHistoryDoc } from '@/lib/models';
 
-/* ════════════════════════════════════════════════════
-   TYPES
-════════════════════════════════════════════════════ */
 type AppView = 'roster' | 'setup' | 'tournament' | 'champion' | 'history';
 
 const INITIAL_TOURNEY: TournamentState = {
@@ -24,141 +21,181 @@ const INITIAL_TOURNEY: TournamentState = {
 };
 
 /* ════════════════════════════════════════════════════
-   SMALL UI ATOMS
+   SMALL ATOMS
 ════════════════════════════════════════════════════ */
 function Btn({
-  children, variant = 'primary', size, full, disabled, onClick, className = '', type = 'button',
+  children, variant = 'primary', size, full, disabled, onClick, className = '',
 }: {
   children: React.ReactNode;
-  variant?: 'primary'|'secondary'|'cyan'|'danger'|'success'|'orange'|'ghost'|'pro'|'beg';
-  size?: 'sm'|'lg';
-  full?: boolean;
-  disabled?: boolean;
-  onClick?: () => void;
-  className?: string;
-  type?: 'button' | 'submit';
+  variant?: 'primary'|'secondary'|'danger'|'success'|'orange'|'ghost'|'pro'|'beg';
+  size?: 'sm'|'lg'; full?: boolean; disabled?: boolean;
+  onClick?: () => void; className?: string;
 }) {
-  const base = 'inline-flex items-center gap-2 border-none cursor-pointer font-semibold transition-all duration-150 active:scale-97 rounded-lg whitespace-nowrap disabled:opacity-40 disabled:cursor-not-allowed disabled:transform-none select-none';
-  const sizes: Record<string, string> = { sm: 'px-3 py-1.5 text-[13px]', lg: 'px-8 py-3.5 text-[16px] rounded-xl', default: 'px-5 py-2.5 text-[14px]' };
-  const variants: Record<string, string> = {
-    primary: 'bg-[var(--accent)] text-[#0a0e1a] hover:bg-[#50ff30] hover:shadow-[0_0_20px_rgba(57,255,20,0.3)]',
-    secondary: 'bg-[var(--bg4)] text-[var(--text)] border border-[var(--border)] hover:bg-[var(--bg3)] hover:border-[var(--accent2)]',
-    cyan: 'bg-[var(--accent2)] text-[#0a0e1a] hover:bg-[#33eeff]',
-    danger: 'bg-transparent text-[var(--danger)] border border-[var(--danger)] hover:bg-[var(--danger)] hover:text-white',
-    success: 'bg-[var(--success)] text-white hover:bg-[#16a34a]',
-    orange: 'bg-[var(--accent3)] text-white hover:bg-[#e55a25]',
-    ghost: 'bg-transparent text-[var(--text2)] border border-[var(--border)] hover:text-[var(--text)] hover:border-[var(--text2)]',
-    pro: 'bg-[var(--pro-color)] text-[#0a0e1a] hover:bg-[#fbbf24]',
-    beg: 'bg-[var(--beg-color)] text-[#0a0e1a] hover:bg-[#4ade80]',
-  };
   return (
-    <button type={type} className={`${base} ${sizes[size ?? 'default']} ${variants[variant]} ${full ? 'w-full justify-center' : ''} ${className}`} disabled={disabled} onClick={onClick}>
+    <button
+      className={`btn btn-${variant}${size ? ` btn-${size}` : ''}${full ? ' btn-full' : ''} ${className}`}
+      disabled={disabled}
+      onClick={onClick}
+    >
       {children}
     </button>
   );
 }
 
 function Card({ children, className = '' }: { children: React.ReactNode; className?: string }) {
-  return <div className={`bg-[var(--card)] border border-[var(--border)] rounded-xl p-6 mb-5 shadow-[var(--shadow)] ${className}`}>{children}</div>;
+  return <div className={`card ${className}`}>{children}</div>;
 }
+
 function CardTitle({ children }: { children: React.ReactNode }) {
-  return <div className="text-[14px] font-semibold uppercase tracking-widest text-[var(--accent)] mb-4">{children}</div>;
+  return <div className="card-title">{children}</div>;
 }
-function GroupBadge({ group }: { group: 'pro' | 'beg' }) {
-  return group === 'pro'
-    ? <span className="text-[10px] font-extrabold uppercase tracking-widest px-2 py-0.5 rounded-full bg-[rgba(245,158,11,0.15)] text-[var(--pro-color)] border border-[rgba(245,158,11,0.4)]">PRO</span>
-    : <span className="text-[10px] font-extrabold uppercase tracking-widest px-2 py-0.5 rounded-full bg-[rgba(34,197,94,0.15)] text-[var(--beg-color)] border border-[rgba(34,197,94,0.4)]">BEG</span>;
+
+function Badge({ group }: { group: 'pro' | 'beg' }) {
+  return <span className={`badge badge-${group}`}>{group === 'pro' ? 'PRO' : 'BEG'}</span>;
+}
+
+function EmptyState({ icon, text }: { icon: string; text: string }) {
+  return (
+    <div className="empty-state">
+      <span className="icon">{icon}</span>
+      <p>{text}</p>
+    </div>
+  );
 }
 
 /* ════════════════════════════════════════════════════
-   ROSTER SCREEN  — manage the global player list
+   CONFETTI
+════════════════════════════════════════════════════ */
+function Confetti({ active }: { active: boolean }) {
+  const [pieces, setPieces] = useState<React.CSSProperties[]>([]);
+  useEffect(() => {
+    if (!active) { setPieces([]); return; }
+    const colors = ['#39ff14','#00e5ff','#ff6b35','#f59e0b','#a78bfa','#ec4899','#fff'];
+    setPieces(Array.from({ length: 120 }, () => ({
+      left: `${Math.random() * 100}vw`,
+      backgroundColor: colors[Math.floor(Math.random() * colors.length)],
+      width: `${Math.random() * 8 + 5}px`,
+      height: `${Math.random() * 8 + 5}px`,
+      animationDuration: `${Math.random() * 3 + 2}s`,
+      animationDelay: `${Math.random() * 2}s`,
+      borderRadius: Math.random() > 0.5 ? '50%' : '2px',
+    })));
+    const t = setTimeout(() => setPieces([]), 6500);
+    return () => clearTimeout(t);
+  }, [active]);
+  if (!pieces.length) return null;
+  return (
+    <div className="confetti-layer">
+      {pieces.map((s, i) => <div key={i} className="confetti-piece anim-fall" style={s} />)}
+    </div>
+  );
+}
+
+/* ════════════════════════════════════════════════════
+   ROSTER SCREEN
 ════════════════════════════════════════════════════ */
 function RosterScreen({ onDone }: { onDone: () => void }) {
   const [players, setPlayers] = useState<PlayerDoc[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState('');
-  const nameRef = useRef<HTMLInputElement>(null);
   const [group, setGroup] = useState<'pro' | 'beg'>('pro');
+  const nameRef = useRef<HTMLInputElement>(null);
 
-  const fetchPlayers = useCallback(async () => {
-    const res = await fetch('/api/players');
-    const data: PlayerDoc[] = await res.json();
-    setPlayers(data);
+  const fetch$ = useCallback(async () => {
+    const r = await fetch('/api/players');
+    setPlayers(await r.json());
     setLoading(false);
   }, []);
 
-  useEffect(() => { fetchPlayers(); }, [fetchPlayers]);
+  useEffect(() => { fetch$(); }, [fetch$]);
 
-  async function addPlayer() {
+  async function add() {
     const name = nameRef.current?.value.trim() ?? '';
     if (!name) return;
     setSaving(true); setErr('');
-    const res = await fetch('/api/players', {
+    const r = await fetch('/api/players', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name, group }),
     });
-    if (res.status === 409) { setErr('A player with that name already exists.'); setSaving(false); return; }
-    if (!res.ok) { setErr('Failed to add player.'); setSaving(false); return; }
+    if (r.status === 409) { setErr('A player with that name already exists.'); setSaving(false); return; }
+    if (!r.ok)            { setErr('Failed to add player.');                    setSaving(false); return; }
     nameRef.current!.value = '';
     nameRef.current!.focus();
-    await fetchPlayers();
+    await fetch$();
     setSaving(false);
   }
 
-  async function deletePlayer(id: string) {
+  async function del(id: string) {
     if (!confirm('Remove this player from the roster?')) return;
     await fetch(`/api/players/${id}`, { method: 'DELETE' });
-    setPlayers(p => p.filter(pl => String(pl._id) !== id));
+    setPlayers(p => p.filter(x => String(x._id) !== id));
   }
 
-  async function toggleGroup(id: string, current: 'pro' | 'beg') {
-    const next = current === 'pro' ? 'beg' : 'pro';
-    await fetch(`/api/players/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ group: next }) });
-    setPlayers(p => p.map(pl => String(pl._id) === id ? { ...pl, group: next } : pl));
+  async function toggleGroup(id: string, cur: 'pro' | 'beg') {
+    const next = cur === 'pro' ? 'beg' : 'pro';
+    await fetch(`/api/players/${id}`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ group: next }),
+    });
+    setPlayers(p => p.map(x => String(x._id) === id ? { ...x, group: next } : x));
   }
+
+  const pros = players.filter(p => p.group === 'pro');
+  const begs = players.filter(p => p.group === 'beg');
 
   return (
-    <div className="animate-fadeIn">
-      <div className="text-[28px] font-extrabold tracking-tight mb-1.5">👥 Player Roster</div>
-      <div className="text-[var(--text2)] text-[15px] mb-8">All registered players. Add new ones once — they're remembered for every tournament.</div>
+    <div className="anim-fade">
+      <p className="page-title">👥 Player Roster</p>
+      <p className="page-sub">Manage your permanent player list. Add once — they're saved forever.</p>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-        {/* Add player */}
+      <div className="two-col" style={{ marginBottom: 20 }}>
+        {/* Add player card */}
         <Card>
           <CardTitle>➕ Add New Player</CardTitle>
-          <div className="flex gap-2 mb-3">
-            <input ref={nameRef} type="text" placeholder="Player name…" maxLength={30}
-              onKeyDown={e => e.key === 'Enter' && addPlayer()}
-              className="flex-1 bg-[var(--bg3)] border border-[var(--border)] rounded-lg text-[var(--text)] text-[15px] px-3.5 py-2.5 outline-none focus:border-[var(--accent)] placeholder:text-[var(--text3)]" />
-          </div>
-          <div className="flex gap-2 mb-4">
+          <input
+            ref={nameRef}
+            className="input"
+            placeholder="Player name…"
+            maxLength={30}
+            style={{ marginBottom: 10 }}
+            onKeyDown={e => e.key === 'Enter' && add()}
+          />
+          <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
             {(['pro', 'beg'] as const).map(g => (
-              <button key={g} onClick={() => setGroup(g)}
-                className={`flex-1 py-2 rounded-lg border text-[14px] font-semibold cursor-pointer transition-all ${group === g ? (g === 'pro' ? 'bg-[var(--pro-color)] text-[#0a0e1a] border-[var(--pro-color)]' : 'bg-[var(--beg-color)] text-[#0a0e1a] border-[var(--beg-color)]') : 'bg-[var(--bg3)] text-[var(--text2)] border-[var(--border)]'}`}>
+              <button
+                key={g}
+                onClick={() => setGroup(g)}
+                style={{ flex: 1, padding: '9px 0', borderRadius: 8, border: `1px solid ${group === g ? (g === 'pro' ? 'var(--pro)' : 'var(--beg)') : 'var(--border)'}`, background: group === g ? (g === 'pro' ? 'rgba(245,158,11,.15)' : 'rgba(34,197,94,.15)') : 'var(--bg3)', color: group === g ? (g === 'pro' ? 'var(--pro)' : 'var(--beg)') : 'var(--text2)', fontWeight: 600, fontSize: 13, cursor: 'pointer', transition: 'all .15s' }}
+              >
                 {g === 'pro' ? '🥇 Pro' : '🌱 Beginner'}
               </button>
             ))}
           </div>
-          {err && <div className="mb-3 px-3 py-2.5 rounded-lg bg-[rgba(239,68,68,0.1)] border border-[rgba(239,68,68,0.3)] text-[var(--danger)] text-[13px]">{err}</div>}
-          <Btn variant="primary" full disabled={saving} onClick={addPlayer}>{saving ? 'Adding…' : '➕ Add Player'}</Btn>
+          {err && <div className="alert alert-danger" style={{ marginBottom: 12 }}>{err}</div>}
+          <Btn variant="primary" full disabled={saving} onClick={add}>
+            {saving ? 'Adding…' : '➕ Add Player'}
+          </Btn>
         </Card>
 
-        {/* Stats summary */}
+        {/* Stats card */}
         <Card>
           <CardTitle>📊 Roster Stats</CardTitle>
-          <div className="flex flex-col gap-3">
-            {[
-              ['Total Players', players.length, 'text-[var(--text)]'],
-              ['Pro Players', players.filter(p => p.group === 'pro').length, 'text-[var(--pro-color)]'],
-              ['Beginners', players.filter(p => p.group === 'beg').length, 'text-[var(--beg-color)]'],
-            ].map(([label, val, color]) => (
-              <div key={String(label)} className="flex items-center justify-between py-3 border-b border-[var(--border)] last:border-0">
-                <span className="text-[var(--text2)] text-[14px]">{label}</span>
-                <span className={`font-bold text-[18px] ${color}`}>{String(val)}</span>
-              </div>
-            ))}
-          </div>
+          {[
+            ['Total Players', players.length, undefined],
+            ['🥇 Pro Players', pros.length, 'var(--pro)'],
+            ['🌱 Beginners',   begs.length, 'var(--beg)'],
+          ].map(([label, val, color]) => (
+            <div className="summary-row" key={String(label)}>
+              <span className="summary-label">{label}</span>
+              <span className="summary-value" style={color ? { color: color as string } : {}}>{String(val)}</span>
+            </div>
+          ))}
+          {players.length > 0 && (
+            <div style={{ marginTop: 16 }}>
+              <Btn variant="primary" full size="lg" onClick={onDone}>🚀 Start a Tournament →</Btn>
+            </div>
+          )}
         </Card>
       </div>
 
@@ -166,26 +203,27 @@ function RosterScreen({ onDone }: { onDone: () => void }) {
       <Card>
         <CardTitle>🏸 All Players ({players.length})</CardTitle>
         {loading
-          ? <div className="text-center py-10 text-[var(--text3)]">Loading…</div>
+          ? <EmptyState icon="⏳" text="Loading players…" />
           : players.length === 0
-            ? <div className="text-center py-10 text-[var(--text3)]"><span className="text-[48px] block mb-3">👥</span><p>No players yet — add some above!</p></div>
+            ? <EmptyState icon="👥" text="No players yet — add some above!" />
             : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              <div className="player-grid">
                 {players.map(p => (
-                  <div key={String(p._id)} className="flex items-center justify-between bg-[var(--bg3)] border border-[var(--border)] rounded-xl px-4 py-3 gap-3">
-                    <div className="flex items-center gap-2.5 min-w-0">
-                      <GroupBadge group={p.group} />
-                      <div className="min-w-0">
-                        <div className="font-semibold text-[14px] truncate">{p.name}</div>
-                        <div className="text-[12px] text-[var(--text3)]">🏆 {p.stats.titles} title{p.stats.titles !== 1 ? 's' : ''} · {p.stats.wins}W {p.stats.losses}L</div>
-                      </div>
+                  <div key={String(p._id)} className="player-card anim-slide">
+                    <Badge group={p.group} />
+                    <div className="info">
+                      <div className="name">{p.name}</div>
+                      <div className="stats">🏆 {p.stats.titles} title{p.stats.titles !== 1 ? 's' : ''} · {p.stats.wins}W {p.stats.losses}L</div>
                     </div>
-                    <div className="flex gap-1.5 shrink-0">
-                      <button title="Toggle Pro/Beg" onClick={() => toggleGroup(String(p._id), p.group)}
-                        className="bg-[var(--bg4)] border border-[var(--border)] text-[12px] px-2 py-1 rounded cursor-pointer hover:border-[var(--accent2)] transition-colors">
+                    <div className="actions">
+                      <button
+                        className="group-toggle-btn"
+                        title="Switch Pro ↔ Beg"
+                        onClick={() => toggleGroup(String(p._id), p.group)}
+                      >
                         {p.group === 'pro' ? '→🌱' : '→🥇'}
                       </button>
-                      <Btn variant="danger" size="sm" onClick={() => deletePlayer(String(p._id))}>✕</Btn>
+                      <Btn variant="danger" size="sm" onClick={() => del(String(p._id))}>✕</Btn>
                     </div>
                   </div>
                 ))}
@@ -194,152 +232,158 @@ function RosterScreen({ onDone }: { onDone: () => void }) {
         }
       </Card>
 
-      <div className="flex justify-end">
-        <Btn variant="primary" size="lg" onClick={onDone}>🚀 Start a Tournament →</Btn>
-      </div>
+      {players.length > 0 && (
+        <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+          <Btn variant="primary" size="lg" onClick={onDone}>🚀 Start a Tournament →</Btn>
+        </div>
+      )}
     </div>
   );
 }
 
 /* ════════════════════════════════════════════════════
-   SETUP SCREEN  — pick who joins + format
+   SETUP SCREEN
 ════════════════════════════════════════════════════ */
 function SetupScreen({
-  state, allPlayers,
-  onTogglePlayer, onSetGameType, onSetFormat, onStart, onBack,
+  state, allPlayers, onTogglePlayer, onSetGameType, onSetFormat, onStart, onBack,
 }: {
-  state: TournamentState;
-  allPlayers: PlayerDoc[];
+  state: TournamentState; allPlayers: PlayerDoc[];
   onTogglePlayer: (p: PlayerDoc) => void;
   onSetGameType: (t: GameType) => void;
   onSetFormat: (f: TourneyFormat) => void;
-  onStart: () => void;
-  onBack: () => void;
+  onStart: () => void; onBack: () => void;
 }) {
   const pros = state.pros.length;
   const begs = state.beginners.length;
   const n = pros + begs;
   const isDoubles = state.gameType === 'doubles';
-  const doublesTeams = isDoubles ? Math.floor(n / 2) : 0;
+  const doublesTeams = Math.floor(n / 2);
   const enoughPlayers = isDoubles ? doublesTeams >= 2 : n >= 4;
-  const fmt = state.tourneyFormat === 'elimination' ? 'Single Elimination' : 'Round Robin';
-  const units = isDoubles ? Math.floor(n / 2) : n;
-  const rounds = state.tourneyFormat === 'elimination'
+  const units = isDoubles ? doublesTeams : n;
+  const estRounds = state.tourneyFormat === 'elimination'
     ? Math.ceil(Math.log2(units || 1))
     : units > 1 ? units - 1 : 0;
 
-  const selectedNames = new Set([...state.pros.map(p => p.name), ...state.beginners.map(p => p.name)]);
-
+  const selectedNames = new Set([...state.pros, ...state.beginners].map(p => p.name));
   const proPlayers = allPlayers.filter(p => p.group === 'pro');
   const begPlayers = allPlayers.filter(p => p.group === 'beg');
 
   return (
-    <div className="animate-fadeIn">
-      <div className="flex items-center gap-3 mb-1.5">
-        <button onClick={onBack} className="text-[var(--text3)] hover:text-[var(--text2)] cursor-pointer bg-none border-none text-[14px]">← Back to roster</button>
-      </div>
-      <div className="text-[28px] font-extrabold tracking-tight mb-1.5">🗡️ Set Up Tournament</div>
-      <div className="text-[var(--text2)] text-[15px] mb-8">Select who's playing today and choose your format.</div>
+    <div className="anim-fade">
+      <button className="back-btn" onClick={onBack}>← Back to roster</button>
+      <p className="page-title">⚙️ Set Up Tournament</p>
+      <p className="page-sub">Pick who's playing today and choose your format.</p>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-        {/* Left: Player selection */}
-        <div>
-          <Card>
-            <CardTitle>
-              👥 Select Players
-              <span className="ml-2 normal-case tracking-normal text-[var(--text2)] font-normal">
-                ({n} selected · <span className="text-[var(--pro-color)]">{pros} pro</span> · <span className="text-[var(--beg-color)]">{begs} beg</span>)
-              </span>
-            </CardTitle>
+      <div className="two-col">
+        {/* Player selection */}
+        <Card>
+          <CardTitle>
+            👥 Select Players
+            <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0, color: 'var(--text2)', fontSize: 12 }}>
+              {n} selected · <span className="text-pro">{pros} pro</span> · <span className="text-beg">{begs} beg</span>
+            </span>
+          </CardTitle>
 
-            {allPlayers.length === 0 && (
-              <div className="text-center py-6 text-[var(--text3)] text-[14px]">No players in roster yet. <button onClick={onBack} className="text-[var(--accent)] underline cursor-pointer bg-none border-none">Add some first</button>.</div>
-            )}
+          {allPlayers.length === 0 && (
+            <p style={{ color: 'var(--text3)', fontSize: 14 }}>
+              No players in roster yet.{' '}
+              <button onClick={onBack} style={{ color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}>
+                Add some first.
+              </button>
+            </p>
+          )}
 
-            {[['pro', proPlayers, '🥇 Pro Players'] as const, ['beg', begPlayers, '🌱 Beginners'] as const].map(([g, gPlayers, label]) => (
-              <div key={g} className="mb-4 last:mb-0">
-                <div className="text-[12px] font-bold uppercase tracking-widest text-[var(--text3)] mb-2">{label} ({gPlayers.length})</div>
-                {gPlayers.length === 0
-                  ? <div className="text-[13px] text-[var(--text3)] py-2">None in roster</div>
-                  : (
-                    <div className="flex flex-col gap-1.5">
-                      {gPlayers.map(p => {
-                        const selected = selectedNames.has(p.name);
-                        return (
-                          <button key={String(p._id)} onClick={() => onTogglePlayer(p)}
-                            className={`flex items-center gap-3 w-full px-3 py-2.5 rounded-lg border text-left cursor-pointer transition-all ${selected ? (g === 'pro' ? 'border-[var(--pro-color)] bg-[rgba(245,158,11,0.08)]' : 'border-[var(--beg-color)] bg-[rgba(34,197,94,0.08)]') : 'border-[var(--border)] bg-[var(--bg3)] hover:border-[var(--text3)]'}`}>
-                            <span className={`w-5 h-5 rounded border-2 flex items-center justify-center shrink-0 transition-all ${selected ? (g === 'pro' ? 'border-[var(--pro-color)] bg-[var(--pro-color)]' : 'border-[var(--beg-color)] bg-[var(--beg-color)]') : 'border-[var(--border)]'}`}>
-                              {selected && <span className="text-[#0a0e1a] text-[12px] font-black">✓</span>}
-                            </span>
-                            <span className="flex-1 font-medium text-[14px]">{p.name}</span>
-                            <span className="text-[12px] text-[var(--text3)]">🏆{p.stats.titles} {p.stats.wins}W</span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  )
-                }
-              </div>
-            ))}
+          <div className="player-select-list">
+            {proPlayers.length > 0 && <>
+              <p className="group-section-label">🥇 Pro Players ({proPlayers.length})</p>
+              {proPlayers.map(p => {
+                const sel = selectedNames.has(p.name);
+                return (
+                  <button
+                    key={String(p._id)}
+                    className={`player-select-item${sel ? ' selected-pro' : ''}`}
+                    onClick={() => onTogglePlayer(p)}
+                  >
+                    <span className={`checkbox${sel ? ' checked-pro' : ''}`}>
+                      {sel && <span className="check-mark">✓</span>}
+                    </span>
+                    <span className="select-item-name">{p.name}</span>
+                    <span className="select-item-stats">🏆{p.stats.titles} {p.stats.wins}W</span>
+                  </button>
+                );
+              })}
+            </>}
+            {begPlayers.length > 0 && <>
+              <p className="group-section-label">🌱 Beginners ({begPlayers.length})</p>
+              {begPlayers.map(p => {
+                const sel = selectedNames.has(p.name);
+                return (
+                  <button
+                    key={String(p._id)}
+                    className={`player-select-item${sel ? ' selected-beg' : ''}`}
+                    onClick={() => onTogglePlayer(p)}
+                  >
+                    <span className={`checkbox${sel ? ' checked-beg' : ''}`}>
+                      {sel && <span className="check-mark">✓</span>}
+                    </span>
+                    <span className="select-item-name">{p.name}</span>
+                    <span className="select-item-stats">🏆{p.stats.titles} {p.stats.wins}W</span>
+                  </button>
+                );
+              })}
+            </>}
+          </div>
 
-            <div className="flex gap-2 mt-4">
+          {allPlayers.length > 0 && (
+            <div className="row" style={{ marginTop: 12 }}>
               <Btn variant="ghost" size="sm" onClick={() => allPlayers.forEach(p => { if (!selectedNames.has(p.name)) onTogglePlayer(p); })}>Select All</Btn>
               <Btn variant="ghost" size="sm" onClick={() => allPlayers.forEach(p => { if (selectedNames.has(p.name)) onTogglePlayer(p); })}>Clear All</Btn>
             </div>
-          </Card>
-        </div>
+          )}
+        </Card>
 
-        {/* Right: Format + Summary */}
-        <div>
+        {/* Format + summary */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
           <Card>
-            <CardTitle>⚙️ Format</CardTitle>
-            <div className="mb-4">
-              <div className="text-[13px] text-[var(--text2)] mb-2">Game type</div>
-              <div className="flex gap-2">
-                {(['singles', 'doubles'] as const).map(t => (
-                  <button key={t} onClick={() => onSetGameType(t)}
-                    className={`flex-1 py-2 rounded-full border text-[14px] font-medium cursor-pointer transition-all ${state.gameType === t ? 'bg-[var(--accent)] text-[#0a0e1a] border-[var(--accent)] font-bold' : 'bg-[var(--bg3)] text-[var(--text2)] border-[var(--border)]'}`}>
-                    {t.charAt(0).toUpperCase() + t.slice(1)}
-                  </button>
-                ))}
-              </div>
+            <CardTitle>🎮 Format</CardTitle>
+
+            <p style={{ fontSize: 12, color: 'var(--text3)', marginBottom: 8 }}>Game type</p>
+            <div className="pills" style={{ marginBottom: 18 }}>
+              {(['singles', 'doubles'] as const).map(t => (
+                <button key={t} className={`pill${state.gameType === t ? ' active' : ''}`} onClick={() => onSetGameType(t)}>
+                  {t.charAt(0).toUpperCase() + t.slice(1)}
+                </button>
+              ))}
             </div>
-            <div>
-              <div className="text-[13px] text-[var(--text2)] mb-2">Tournament format</div>
-              <div className="flex flex-col gap-2">
-                {([['elimination', '🗡️ Single Elimination'], ['roundrobin', '🔄 Round Robin']] as const).map(([val, label]) => (
-                  <button key={val} onClick={() => onSetFormat(val)}
-                    className={`py-2 px-4 rounded-full border text-[14px] font-medium cursor-pointer transition-all text-left ${state.tourneyFormat === val ? 'bg-[var(--accent)] text-[#0a0e1a] border-[var(--accent)] font-bold' : 'bg-[var(--bg3)] text-[var(--text2)] border-[var(--border)]'}`}>
-                    {label}
-                  </button>
-                ))}
-              </div>
+
+            <p style={{ fontSize: 12, color: 'var(--text3)', marginBottom: 8 }}>Tournament format</p>
+            <div className="pills">
+              {([['elimination', '🗡️ Single Elimination'], ['roundrobin', '🔄 Round Robin']] as const).map(([v, l]) => (
+                <button key={v} className={`pill${state.tourneyFormat === v ? ' active' : ''}`} onClick={() => onSetFormat(v)}>{l}</button>
+              ))}
             </div>
           </Card>
 
           <Card>
             <CardTitle>📋 Summary</CardTitle>
             {[
-              ['Selected players', n],
-              ['Pro / Beginner', `${pros} / ${begs}`],
+              ['Selected', n],
+              ['Pro / Beg', `${pros} / ${begs}`],
               ['Game type', isDoubles ? 'Doubles' : 'Singles'],
-              ...(isDoubles ? [['Teams', doublesTeams]] : []),
-              ['Format', fmt],
-              ['Est. rounds', units >= 2 ? rounds : '—'],
-            ].map(([label, value], i) => (
-              <div key={i} className="flex items-center justify-between py-3 border-b border-[var(--border)] last:border-0">
-                <span className="text-[var(--text2)] text-[14px]">{label}</span>
-                <span className="font-semibold text-[14px]">{String(value)}</span>
+              ...(isDoubles ? [['Teams', doublesTeams]] as const : []),
+              ['Format', state.tourneyFormat === 'elimination' ? 'Single Elimination' : 'Round Robin'],
+              ['Est. rounds', units >= 2 ? estRounds : '—'],
+            ].map(([l, v], i) => (
+              <div className="summary-row" key={i}>
+                <span className="summary-label">{l}</span>
+                <span className="summary-value">{v}</span>
               </div>
             ))}
 
-            {n > 0 && n < 4 && (
-              <div className="mt-3 px-4 py-3 rounded-lg bg-[rgba(245,158,11,0.1)] border border-[rgba(245,158,11,0.3)] text-[var(--warn)] text-[14px] font-medium">⚠️ Need at least 4 players to start</div>
-            )}
-            {isDoubles && n >= 4 && doublesTeams < 2 && (
-              <div className="mt-3 px-4 py-3 rounded-lg bg-[rgba(245,158,11,0.1)] border border-[rgba(245,158,11,0.3)] text-[var(--warn)] text-[14px] font-medium">⚠️ Need at least 4 players for 2 doubles teams</div>
-            )}
-            <div className="mt-5">
+            {n > 0 && n < 4 && <div className="alert alert-warn">⚠️ Need at least 4 players to start</div>}
+            {isDoubles && n >= 4 && doublesTeams < 2 && <div className="alert alert-warn">⚠️ Need at least 4 players for 2 doubles teams</div>}
+
+            <div style={{ marginTop: 16 }}>
               <Btn variant="primary" size="lg" full disabled={!enoughPlayers} onClick={onStart}>🚀 Start Tournament</Btn>
             </div>
           </Card>
@@ -350,81 +394,85 @@ function SetupScreen({
 }
 
 /* ════════════════════════════════════════════════════
-   MATCH CARD
+   MATCH CARD  — handles both live & completed states
 ════════════════════════════════════════════════════ */
-function MatchCard({ match, gameType, roundLabel, onScoreChange, onMarkWinner }: {
+function MatchCard({
+  match, gameType, roundLabel, onScoreChange, onMarkWinner,
+}: {
   match: Match; gameType: GameType; roundLabel: string;
   onScoreChange: (id: string, t: 'A'|'B', d: number) => void;
   onMarkWinner: (id: string, s: 'A'|'B') => void;
 }) {
   if (match.bye) {
     return (
-      <div className="bg-[var(--card)] border border-dashed border-[var(--border)] rounded-xl p-5 opacity-50 relative overflow-hidden">
-        <div className="absolute top-0 left-0 right-0 h-[3px] bg-[var(--text3)]" />
-        <div className="text-[11px] font-bold uppercase tracking-widest text-[var(--text3)] mb-4">🟡 BYE</div>
-        <div className="font-bold text-[15px] mb-1">{match.teamA.name}</div>
-        <div className="text-center py-2.5 text-[var(--text3)] text-[14px]">🏸 Advances automatically</div>
+      <div className="match-card bye-card">
+        <p className="match-status">🟡 BYE</p>
+        <p style={{ fontWeight: 700, fontSize: 15, marginBottom: 8 }}>{match.teamA.name}</p>
+        <p style={{ textAlign: 'center', color: 'var(--text3)', fontSize: 13 }}>🏸 Advances automatically</p>
       </div>
     );
   }
-  const nameA = match.teamA.name, nameB = match.teamB!.name;
+
+  const nameA = match.teamA.name;
+  const nameB = match.teamB!.name;
   const winnerA = match.winner?.id === match.teamA.id;
   const winnerB = match.winner?.id === match.teamB?.id;
 
   if (match.completed) {
     return (
-      <div className="bg-[var(--card)] border border-[var(--border)] rounded-xl p-5 opacity-65 relative overflow-hidden">
-        <div className="absolute top-0 left-0 right-0 h-[3px] bg-[var(--success)]" />
-        <div className="text-[11px] font-bold uppercase tracking-widest text-[var(--text3)] mb-4">✅ COMPLETED</div>
-        <div className="flex items-center gap-3 mb-4">
-          <div className="flex-1 text-center">
-            <div className={`font-bold text-[15px] mb-1 ${winnerA ? 'text-[var(--success)]' : 'text-[var(--text3)]'}`}>{nameA}{winnerA ? ' 🏆' : ''}</div>
-            {gameType === 'doubles' && <div className="text-[12px] text-[var(--text2)]">{match.teamA.players.join(' & ')}</div>}
+      <div className="match-card completed">
+        <p className="match-status">✅ COMPLETED</p>
+        <div className="match-versus">
+          <div className="match-team">
+            <p className={`match-team-name ${winnerA ? 'team-winner' : 'team-loser'}`}>{nameA}{winnerA ? ' 🏆' : ''}</p>
+            {gameType === 'doubles' && <p className="match-team-sub">{match.teamA.players.join(' & ')}</p>}
           </div>
-          <div className="bg-[var(--bg4)] rounded-full w-9 h-9 flex items-center justify-center text-[11px] font-bold text-[var(--text3)] shrink-0">VS</div>
-          <div className="flex-1 text-center">
-            <div className={`font-bold text-[15px] mb-1 ${winnerB ? 'text-[var(--success)]' : 'text-[var(--text3)]'}`}>{nameB}{winnerB ? ' 🏆' : ''}</div>
-            {gameType === 'doubles' && <div className="text-[12px] text-[var(--text2)]">{match.teamB!.players.join(' & ')}</div>}
+          <div className="vs-circle">VS</div>
+          <div className="match-team">
+            <p className={`match-team-name ${winnerB ? 'team-winner' : 'team-loser'}`}>{nameB}{winnerB ? ' 🏆' : ''}</p>
+            {gameType === 'doubles' && <p className="match-team-sub">{match.teamB!.players.join(' & ')}</p>}
           </div>
         </div>
-        <div className="text-center py-2.5 bg-[var(--bg3)] rounded-lg border border-[var(--border)]">
-          <div className="text-[15px] font-bold text-[var(--success)] mb-1">🏆 {match.winner!.name} wins</div>
-          <div className="text-[20px] font-extrabold tracking-widest">{match.scoreA} — {match.scoreB}</div>
+        <div className="completed-result">
+          <p className="completed-winner">🏆 {match.winner!.name} wins</p>
+          <p className="completed-score">{match.scoreA} — {match.scoreB}</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="bg-[var(--card)] border border-[var(--border)] rounded-xl p-5 relative overflow-hidden">
-      <div className="absolute top-0 left-0 right-0 h-[3px] bg-gradient-to-r from-[var(--accent)] to-[var(--accent2)]" />
-      <div className="text-[11px] font-bold uppercase tracking-widest text-[var(--text3)] mb-4">⚡ LIVE · {roundLabel}</div>
-      <div className="flex items-center gap-3 mb-4">
-        <div className="flex-1 text-center">
-          <div className="font-bold text-[15px] mb-1">{nameA}</div>
-          {gameType === 'doubles' && <div className="text-[12px] text-[var(--text2)]">{match.teamA.players.join(' & ')}</div>}
+    <div className="match-card">
+      <p className="match-status">⚡ LIVE · {roundLabel}</p>
+
+      <div className="match-versus">
+        <div className="match-team">
+          <p className="match-team-name">{nameA}</p>
+          {gameType === 'doubles' && <p className="match-team-sub">{match.teamA.players.join(' & ')}</p>}
         </div>
-        <div className="bg-[var(--bg4)] rounded-full w-9 h-9 flex items-center justify-center text-[11px] font-bold text-[var(--text3)] shrink-0">VS</div>
-        <div className="flex-1 text-center">
-          <div className="font-bold text-[15px] mb-1">{nameB}</div>
-          {gameType === 'doubles' && <div className="text-[12px] text-[var(--text2)]">{match.teamB!.players.join(' & ')}</div>}
+        <div className="vs-circle">VS</div>
+        <div className="match-team">
+          <p className="match-team-name">{nameB}</p>
+          {gameType === 'doubles' && <p className="match-team-sub">{match.teamB!.players.join(' & ')}</p>}
         </div>
       </div>
-      <div className="flex items-center justify-center gap-3 mb-4">
+
+      <div className="score-row">
         {(['A', 'B'] as const).map((side, si) => (
           <>
-            {si === 1 && <span key="dash" className="text-[16px] font-bold text-[var(--text3)]">—</span>}
-            <div key={side} className="flex items-center gap-2 bg-[var(--bg3)] border border-[var(--border)] rounded-lg px-2.5 py-1.5">
-              <button className="bg-[var(--bg4)] border-none text-[var(--text)] text-[18px] font-bold w-7 h-7 rounded-md cursor-pointer flex items-center justify-center hover:bg-[var(--accent)] hover:text-[#0a0e1a]" onClick={() => onScoreChange(match.id, side, -1)}>−</button>
-              <span className="text-[22px] font-extrabold min-w-[32px] text-center">{side === 'A' ? match.scoreA : match.scoreB}</span>
-              <button className="bg-[var(--bg4)] border-none text-[var(--text)] text-[18px] font-bold w-7 h-7 rounded-md cursor-pointer flex items-center justify-center hover:bg-[var(--accent)] hover:text-[#0a0e1a]" onClick={() => onScoreChange(match.id, side, 1)}>+</button>
+            {si === 1 && <span key="dash" className="score-dash">—</span>}
+            <div key={side} className="score-control">
+              <button className="score-btn" onClick={() => onScoreChange(match.id, side, -1)}>−</button>
+              <span className="score-num">{side === 'A' ? match.scoreA : match.scoreB}</span>
+              <button className="score-btn" onClick={() => onScoreChange(match.id, side, 1)}>+</button>
             </div>
           </>
         ))}
       </div>
-      <div className="flex gap-2">
-        <Btn variant="success" full onClick={() => onMarkWinner(match.id, 'A')} className="text-[13px] flex-1">🏆 {nameA} Wins</Btn>
-        <Btn variant="orange" full onClick={() => onMarkWinner(match.id, 'B')} className="text-[13px] flex-1">🏆 {nameB} Wins</Btn>
+
+      <div className="winner-btns">
+        <Btn variant="success" onClick={() => onMarkWinner(match.id, 'A')}>🏆 {nameA}</Btn>
+        <Btn variant="orange"  onClick={() => onMarkWinner(match.id, 'B')}>🏆 {nameB}</Btn>
       </div>
     </div>
   );
@@ -437,26 +485,20 @@ function BracketView({ rounds, currentRoundIdx }: { rounds: Round[]; currentRoun
   return (
     <Card>
       <CardTitle>📊 Bracket</CardTitle>
-      <div className="overflow-x-auto pb-5">
-        <div className="flex gap-0 min-w-max">
+      <div className="bracket-wrap">
+        <div className="bracket-rounds">
           {rounds.map((round, ri) => (
-            <div key={ri} className="flex flex-col min-w-[220px]">
-              <div className="text-[12px] font-bold uppercase tracking-widest text-[var(--accent2)] px-4 py-2 text-center border-b border-[var(--border)] mb-2">{round.name}</div>
-              <div className="flex flex-col flex-1">
-                {round.matches.map(match => {
-                  const isCurrent = ri === currentRoundIdx;
-                  const aWon = match.winner?.id === match.teamA?.id;
-                  const bWon = match.winner?.id === match.teamB?.id;
+            <div key={ri} className="bracket-round">
+              <div className="bracket-round-title">{round.name}</div>
+              <div className="bracket-slots">
+                {round.matches.map(m => {
+                  const isCur = ri === currentRoundIdx;
+                  const aWon = m.winner?.id === m.teamA?.id;
+                  const bWon = m.winner?.id === m.teamB?.id;
                   return (
-                    <div key={match.id} className="flex flex-col justify-center flex-1 px-3 py-2">
-                      <div className={`bg-[var(--bg3)] border rounded-md px-3 py-2 text-[13px] font-medium my-0.5 whitespace-nowrap overflow-hidden text-ellipsis max-w-[190px] ${aWon ? 'border-[var(--success)] text-[var(--success)]' : isCurrent && !match.completed && !match.bye ? 'border-[var(--accent)] animate-pulse-green' : 'border-[var(--border)]'}`}>
-                        {match.teamA?.name ?? '?'}
-                      </div>
-                      {!match.bye && (
-                        <div className={`bg-[var(--bg3)] border rounded-md px-3 py-2 text-[13px] font-medium my-0.5 whitespace-nowrap overflow-hidden text-ellipsis max-w-[190px] ${bWon ? 'border-[var(--success)] text-[var(--success)]' : isCurrent && !match.completed ? 'border-[var(--accent)] animate-pulse-green' : 'border-[var(--border)]'}`}>
-                          {match.teamB?.name ?? '?'}
-                        </div>
-                      )}
+                    <div key={m.id} className="bracket-match-group">
+                      <div className={`bracket-slot${aWon ? ' winner' : isCur && !m.completed && !m.bye ? ' current anim-pulse' : ''}`}>{m.teamA?.name ?? '?'}</div>
+                      {!m.bye && <div className={`bracket-slot${bWon ? ' winner' : isCur && !m.completed ? ' current anim-pulse' : ''}`}>{m.teamB?.name ?? '?'}</div>}
                     </div>
                   );
                 })}
@@ -474,23 +516,30 @@ function StandingsView({ teams, rrStandings, gameType }: { teams: Team[]; rrStan
   return (
     <Card>
       <CardTitle>📊 Live Standings</CardTitle>
-      <div className="overflow-x-auto">
-        <table className="w-full border-collapse text-[14px]">
+      <div style={{ overflowX: 'auto' }}>
+        <table className="standings-table">
           <thead>
-            <tr>{['#','Team','W','L','+/-','Pts'].map(h => <th key={h} className="bg-[var(--bg3)] text-[var(--text2)] text-[11px] font-bold uppercase tracking-widest px-3.5 py-2.5 text-left border-b border-[var(--border)] [&:nth-child(n+3)]:text-center">{h}</th>)}</tr>
+            <tr>
+              <th>#</th><th>Team</th>
+              <th className="num">W</th><th className="num">L</th>
+              <th className="num">+/-</th><th className="num">Pts</th>
+            </tr>
           </thead>
           <tbody>
             {sorted.map(({ team, stats }, i) => {
               const diff = stats.scoreFor - stats.scoreAgainst;
-              const badge = i===0?'bg-[#f59e0b] text-black':i===1?'bg-[#9ca3af] text-black':i===2?'bg-[#92400e] text-white':'bg-[var(--bg4)] text-[var(--text2)]';
+              const badge = i === 0 ? 'gold' : i === 1 ? 'silver' : i === 2 ? 'bronze' : '';
               return (
-                <tr key={team.id} className={`hover:[&>td]:bg-[var(--bg3)] ${i===0?'bg-[rgba(57,255,20,0.05)]':''}`}>
-                  <td className="px-3.5 py-3 border-b border-[var(--border)]"><span className={`inline-flex items-center justify-center w-6 h-6 rounded-full text-[12px] font-extrabold ${badge}`}>{i+1}</span></td>
-                  <td className="px-3.5 py-3 border-b border-[var(--border)]"><strong>{team.name}</strong>{gameType==='doubles'&&<><br/><span className="text-[13px] text-[var(--text2)]">{team.players.join(' & ')}</span></>}</td>
-                  <td className="px-3.5 py-3 border-b border-[var(--border)] text-center font-bold text-[var(--success)]">{stats.wins}</td>
-                  <td className="px-3.5 py-3 border-b border-[var(--border)] text-center font-bold text-[var(--danger)]">{stats.losses}</td>
-                  <td className={`px-3.5 py-3 border-b border-[var(--border)] text-center font-bold ${diff>=0?'text-[var(--accent)]':'text-[var(--danger)]'}`}>{diff>=0?'+':''}{diff}</td>
-                  <td className="px-3.5 py-3 border-b border-[var(--border)] text-center text-[16px] font-bold text-[var(--accent2)]">{stats.pts}</td>
+                <tr key={team.id} className={i === 0 ? 'rank-top' : ''}>
+                  <td><span className={`rank-badge${badge ? ` ${badge}` : ''}`}>{i + 1}</span></td>
+                  <td>
+                    <strong>{team.name}</strong>
+                    {gameType === 'doubles' && <><br /><span style={{ fontSize: 12, color: 'var(--text2)' }}>{team.players.join(' & ')}</span></>}
+                  </td>
+                  <td className="num" style={{ color: 'var(--success)' }}>{stats.wins}</td>
+                  <td className="num" style={{ color: 'var(--danger)' }}>{stats.losses}</td>
+                  <td className="num" style={{ color: diff >= 0 ? 'var(--accent)' : 'var(--danger)' }}>{diff >= 0 ? '+' : ''}{diff}</td>
+                  <td className="num" style={{ fontSize: 15, color: 'var(--accent2)' }}>{stats.pts}</td>
                 </tr>
               );
             })}
@@ -503,8 +552,12 @@ function StandingsView({ teams, rrStandings, gameType }: { teams: Team[]; rrStan
 
 /* ════════════════════════════════════════════════════
    TOURNAMENT SCREEN
+   Multi-match-in-progress: shows ALL incomplete rounds
+   side-by-side so multiple courts can run at once.
 ════════════════════════════════════════════════════ */
-function TournamentScreen({ state, onScoreChange, onMarkWinner, onReset, showRoundBanner }: {
+function TournamentScreen({
+  state, onScoreChange, onMarkWinner, onReset, showRoundBanner,
+}: {
   state: TournamentState;
   onScoreChange: (id: string, t: 'A'|'B', d: number) => void;
   onMarkWinner: (id: string, s: 'A'|'B') => void;
@@ -514,78 +567,163 @@ function TournamentScreen({ state, onScoreChange, onMarkWinner, onReset, showRou
   const [tab, setTab] = useState<'matches'|'bracket'|'history'>('matches');
   const isRR = state.tourneyFormat === 'roundrobin';
   const currentRound = getCurrentRound(state);
-  const total = state.rounds.reduce((a,r) => a + r.matches.filter(m=>!m.bye).length, 0);
-  const done = state.rounds.reduce((a,r) => a + r.matches.filter(m=>m.completed&&!m.bye).length, 0);
-  const progress = total ? Math.round((done/total)*100) : 0;
+
+  const totalM = state.rounds.reduce((a, r) => a + r.matches.filter(m => !m.bye).length, 0);
+  const doneM  = state.rounds.reduce((a, r) => a + r.matches.filter(m => m.completed && !m.bye).length, 0);
+  const progress = totalM ? Math.round((doneM / totalM) * 100) : 0;
+
+  // For RR: show all rounds that have at least one incomplete match
+  // For Elimination: show current round
+  const activeRounds: Round[] = isRR
+    ? state.rounds.filter(r => r.matches.some(m => !m.completed))
+    : (currentRound ? [currentRound] : []);
+
+  // Completed rounds in this session (for reference, shown collapsed)
+  const completedRounds: Round[] = isRR
+    ? state.rounds.filter(r => r.matches.every(m => m.completed))
+    : state.rounds.slice(0, state.currentRoundIdx);
 
   return (
-    <div className="animate-fadeIn">
+    <div className="anim-fade">
       {showRoundBanner && (
-        <div className="text-center py-5 px-5 bg-gradient-to-r from-[rgba(57,255,20,0.1)] to-[rgba(0,229,255,0.1)] border border-[var(--accent)] rounded-xl mb-5 animate-glow">
+        <div className="round-banner anim-glow">
           ✅ Round complete! Advancing to next round…
         </div>
       )}
-      <div className="flex items-center justify-between mb-5 flex-wrap gap-3">
+
+      {/* Round header */}
+      <div className="round-header">
         <div>
-          <div className="text-[28px] font-extrabold tracking-tight">{isRR ? '🔄 Round Robin Tournament' : '🗡️ Elimination Bracket'}</div>
-          <div className="text-[var(--text2)] text-[15px]">{state.gameType==='doubles'?'Doubles':'Singles'} · {state.teams.length} {state.gameType==='doubles'?'teams':'players'}</div>
+          <p style={{ fontSize: 24, fontWeight: 800, letterSpacing: '-.5px' }}>
+            {isRR ? '🔄 Round Robin' : '🗡️ Elimination'}
+          </p>
+          <p className="text-muted" style={{ fontSize: 14, marginTop: 2 }}>
+            {state.gameType === 'doubles' ? 'Doubles' : 'Singles'} · {state.teams.length} {state.gameType === 'doubles' ? 'teams' : 'players'} · {doneM}/{totalM} matches done
+          </p>
         </div>
-        <div className="flex items-center gap-3 flex-wrap">
-          <span className="bg-gradient-to-r from-[var(--accent)] to-[#00ff88] text-[#0a0e1a] font-extrabold text-[14px] px-4 py-1.5 rounded-full">{currentRound?.name ?? 'Complete'}</span>
-          <div className="flex-1 max-w-[300px] min-w-[120px] bg-[var(--bg3)] rounded-full h-1.5 overflow-hidden">
-            <div className="h-full bg-gradient-to-r from-[var(--accent)] to-[var(--accent2)] rounded-full transition-all duration-500" style={{width:`${progress}%`}} />
+        <div className="row wrap">
+          <span className="round-badge">{currentRound?.name ?? 'Complete'}</span>
+          <div className="progress-track">
+            <div className="progress-fill" style={{ width: `${progress}%` }} />
           </div>
           <Btn variant="ghost" size="sm" onClick={onReset}>↩️ New</Btn>
         </div>
       </div>
 
-      <div className="flex gap-1 bg-[var(--bg3)] rounded-xl p-1 mb-6 flex-wrap">
-        {([['matches','⚡ Matches'],['bracket',isRR?'📊 Standings':'📊 Bracket'],['history','📜 History']] as const).map(([id,label]) => (
-          <button key={id} onClick={() => setTab(id)}
-            className={`flex-1 px-4 py-2 rounded-lg border-none cursor-pointer font-inherit text-[14px] font-medium transition-all text-center ${tab===id?'bg-[var(--card)] text-[var(--text)] font-semibold shadow-[0_2px_8px_rgba(0,0,0,0.3)]':'bg-transparent text-[var(--text2)]'}`}>
-            {label}
-          </button>
+      {/* Tabs */}
+      <div className="tabs">
+        {([['matches','⚡ Matches'],['bracket', isRR ? '📊 Standings' : '📊 Bracket'],['history','📜 History']] as const).map(([id, label]) => (
+          <button key={id} className={`tab${tab === id ? ' active' : ''}`} onClick={() => setTab(id)}>{label}</button>
         ))}
       </div>
 
+      {/* MATCHES TAB */}
       {tab === 'matches' && (
-        <div className="grid grid-cols-[repeat(auto-fill,minmax(320px,1fr))] gap-4">
-          {!currentRound
-            ? <div className="col-span-full text-center py-10 text-[var(--text3)]"><span className="text-[48px] block mb-3">🏆</span><p>Tournament complete!</p></div>
-            : currentRound.matches.map(m => (
-                <MatchCard key={m.id} match={m} gameType={state.gameType}
-                  roundLabel={getRoundLabelForMatch(state.rounds, m.id)}
-                  onScoreChange={onScoreChange} onMarkWinner={onMarkWinner} />
-              ))
-          }
+        <div>
+          {!currentRound && state.champion ? (
+            <EmptyState icon="🏆" text="Tournament complete!" />
+          ) : activeRounds.length === 0 ? (
+            <EmptyState icon="🏆" text="All matches complete!" />
+          ) : (
+            activeRounds.map(round => (
+              <div key={round.name} style={{ marginBottom: 28 }}>
+                {/* Round label — only show when multiple rounds active */}
+                {(activeRounds.length > 1 || completedRounds.length > 0) && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14 }}>
+                    <span style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 1, color: 'var(--accent2)' }}>{round.name}</span>
+                    <span style={{ flex: 1, height: 1, background: 'var(--border)' }} />
+                    <span style={{ fontSize: 12, color: 'var(--text3)' }}>
+                      {round.matches.filter(m => m.completed && !m.bye).length}/{round.matches.filter(m => !m.bye).length} done
+                    </span>
+                  </div>
+                )}
+                <div className="matches-grid">
+                  {round.matches.map(m => (
+                    <MatchCard
+                      key={m.id}
+                      match={m}
+                      gameType={state.gameType}
+                      roundLabel={round.name}
+                      onScoreChange={onScoreChange}
+                      onMarkWinner={onMarkWinner}
+                    />
+                  ))}
+                </div>
+              </div>
+            ))
+          )}
+
+          {/* Show completed rounds collapsed for reference */}
+          {completedRounds.length > 0 && (
+            <div style={{ marginTop: 8 }}>
+              <p style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 1, color: 'var(--text3)', marginBottom: 10 }}>Completed Rounds</p>
+              {completedRounds.map(round => (
+                <CompletedRoundSummary key={round.name} round={round} gameType={state.gameType} />
+              ))}
+            </div>
+          )}
         </div>
       )}
 
-      {tab === 'bracket' && (isRR
-        ? <StandingsView teams={state.teams} rrStandings={state.rrStandings} gameType={state.gameType} />
-        : <BracketView rounds={state.rounds} currentRoundIdx={state.currentRoundIdx} />
+      {tab === 'bracket' && (
+        isRR
+          ? <StandingsView teams={state.teams} rrStandings={state.rrStandings} gameType={state.gameType} />
+          : <BracketView rounds={state.rounds} currentRoundIdx={state.currentRoundIdx} />
       )}
 
       {tab === 'history' && (
         <Card>
           <CardTitle>📜 Match History</CardTitle>
           {state.history.length === 0
-            ? <div className="text-center py-10 text-[var(--text3)]"><span className="text-[48px] block mb-3">📋</span><p>No completed matches yet</p></div>
-            : <div className="flex flex-col gap-2 max-h-[320px] overflow-y-auto">
-                {[...state.history].reverse().map((h,i) => (
-                  <div key={i} className="flex items-center justify-between bg-[var(--bg3)] border border-[var(--border)] rounded-lg px-3.5 py-2.5 text-[13px] gap-3">
-                    <span className="text-[11px] text-[var(--text3)] font-semibold whitespace-nowrap">{h.round}</span>
-                    <span className="flex-1 font-medium">
-                      <span style={{color:h.winner===h.teamA?'var(--success)':'var(--text3)',fontWeight:h.winner===h.teamA?700:undefined}}>{h.teamA}</span>
-                      <span className="text-[var(--text3)]"> vs </span>
-                      <span style={{color:h.winner===h.teamB?'var(--success)':'var(--text3)',fontWeight:h.winner===h.teamB?700:undefined}}>{h.teamB}</span>
+            ? <EmptyState icon="📋" text="No completed matches yet" />
+            : (
+              <div className="history-list">
+                {[...state.history].reverse().map((h, i) => (
+                  <div key={i} className="history-item">
+                    <span className="history-round">{h.round}</span>
+                    <span className="history-teams">
+                      <span style={{ color: h.winner === h.teamA ? 'var(--success)' : 'var(--text3)', fontWeight: h.winner === h.teamA ? 700 : undefined }}>{h.teamA}</span>
+                      <span style={{ color: 'var(--text3)' }}> vs </span>
+                      <span style={{ color: h.winner === h.teamB ? 'var(--success)' : 'var(--text3)', fontWeight: h.winner === h.teamB ? 700 : undefined }}>{h.teamB}</span>
                     </span>
-                    <span className="font-extrabold text-[15px] tracking-widest text-[var(--accent2)]">{h.scoreA}–{h.scoreB}</span>
+                    <span className="history-score">{h.scoreA}–{h.scoreB}</span>
                   </div>
                 ))}
               </div>
+            )
           }
         </Card>
+      )}
+    </div>
+  );
+}
+
+/* ── Completed round summary (collapsed row) ── */
+function CompletedRoundSummary({ round, gameType }: { round: Round; gameType: GameType }) {
+  const [open, setOpen] = useState(false);
+  const nonBye = round.matches.filter(m => !m.bye);
+  return (
+    <div style={{ background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 10, marginBottom: 8, overflow: 'hidden' }}>
+      <button
+        style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 16px', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text2)', fontFamily: 'inherit' }}
+        onClick={() => setOpen(o => !o)}
+      >
+        <span style={{ fontWeight: 600, fontSize: 13 }}>✅ {round.name}</span>
+        <span style={{ fontSize: 12, color: 'var(--text3)' }}>{nonBye.length} match{nonBye.length !== 1 ? 'es' : ''} {open ? '▲' : '▼'}</span>
+      </button>
+      {open && (
+        <div style={{ padding: '4px 16px 12px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {nonBye.map(m => (
+            <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 13, background: 'var(--bg4)', borderRadius: 6, padding: '6px 12px' }}>
+              <span style={{ flex: 1 }}>
+                <span style={{ color: m.winner?.id === m.teamA.id ? 'var(--success)' : 'var(--text3)', fontWeight: m.winner?.id === m.teamA.id ? 700 : undefined }}>{m.teamA.name}</span>
+                <span style={{ color: 'var(--text3)' }}> vs </span>
+                <span style={{ color: m.winner?.id === m.teamB?.id ? 'var(--success)' : 'var(--text3)', fontWeight: m.winner?.id === m.teamB?.id ? 700 : undefined }}>{m.teamB?.name}</span>
+              </span>
+              <span style={{ color: 'var(--accent2)', fontWeight: 700, fontSize: 13, letterSpacing: 1 }}>{m.scoreA}–{m.scoreB}</span>
+            </div>
+          ))}
+        </div>
       )}
     </div>
   );
@@ -594,14 +732,20 @@ function TournamentScreen({ state, onScoreChange, onMarkWinner, onReset, showRou
 /* ════════════════════════════════════════════════════
    CHAMPION SCREEN
 ════════════════════════════════════════════════════ */
-function ChampionScreen({ champion, gameType, onNew, onViewHistory }: { champion: Team; gameType: GameType; onNew: () => void; onViewHistory: () => void }) {
+function ChampionScreen({ champion, gameType, onNew, onViewHistory }: {
+  champion: Team; gameType: GameType; onNew: () => void; onViewHistory: () => void;
+}) {
   return (
-    <div className="text-center py-[60px] px-5 animate-fadeIn">
-      <span className="text-[100px] mb-6 block animate-bounce-trophy" style={{filter:'drop-shadow(0 0 30px rgba(245,158,11,0.6))'}}>🏆</span>
-      <div className="text-[18px] font-bold text-[var(--text2)] uppercase tracking-[3px] mb-3">Tournament Champion</div>
-      <div className="text-[48px] font-black tracking-tight bg-gradient-to-r from-[var(--accent)] to-[var(--accent2)] bg-clip-text text-transparent mb-2 leading-tight">{champion.name}</div>
-      <div className="text-[16px] text-[var(--text2)] mb-12">{gameType==='doubles'?`🎉 ${champion.players.join(' & ')} — Doubles Champions!`:'🎉 Congratulations on winning the tournament!'}</div>
-      <div className="flex gap-3 justify-center flex-wrap">
+    <div className="champion-wrap anim-fade">
+      <span className="champion-trophy anim-trophy">🏆</span>
+      <p className="champion-title">Tournament Champion</p>
+      <p className="champion-name">{champion.name}</p>
+      <p className="champion-sub">
+        {gameType === 'doubles'
+          ? `🎉 ${champion.players.join(' & ')} — Doubles Champions!`
+          : '🎉 Congratulations on winning the tournament!'}
+      </p>
+      <div className="champion-btns">
         <Btn variant="primary" size="lg" onClick={onNew}>🏸 New Tournament</Btn>
         <Btn variant="secondary" size="lg" onClick={onViewHistory}>📜 Tournament History</Btn>
       </div>
@@ -625,109 +769,85 @@ function HistoryScreen({ onBack }: { onBack: () => void }) {
   }, []);
 
   return (
-    <div className="animate-fadeIn">
-      <div className="flex items-center gap-3 mb-1.5">
-        <button onClick={onBack} className="text-[var(--text3)] hover:text-[var(--text2)] cursor-pointer bg-none border-none text-[14px]">← Back</button>
-      </div>
-      <div className="text-[28px] font-extrabold tracking-tight mb-1.5">📜 Tournament History</div>
-      <div className="text-[var(--text2)] text-[15px] mb-8">{total} tournament{total !== 1 ? 's' : ''} recorded.</div>
+    <div className="anim-fade">
+      <button className="back-btn" onClick={onBack}>← Back</button>
+      <p className="page-title">📜 Tournament History</p>
+      <p className="page-sub">{total} tournament{total !== 1 ? 's' : ''} on record.</p>
 
-      {loading
-        ? <div className="text-center py-10 text-[var(--text3)]">Loading…</div>
-        : history.length === 0
-          ? <div className="text-center py-16 text-[var(--text3)]"><span className="text-[64px] block mb-4">📋</span><p className="text-[16px]">No tournaments recorded yet.</p></div>
-          : <div className="flex flex-col gap-4">
-              {history.map(t => {
-                const id = String(t._id);
-                const isOpen = expanded === id;
-                const date = new Date(t.createdAt).toLocaleDateString(undefined, { dateStyle: 'medium' });
-                return (
-                  <Card key={id} className="mb-0 cursor-pointer" >
-                    <button className="w-full text-left" onClick={() => setExpanded(isOpen ? null : id)}>
-                      <div className="flex items-center justify-between gap-4 flex-wrap">
-                        <div className="flex items-center gap-3">
-                          <span className="text-[32px]">🏆</span>
-                          <div>
-                            <div className="font-bold text-[16px]">{t.champion}</div>
-                            <div className="text-[13px] text-[var(--text2)]">{date} · {t.gameType === 'doubles' ? 'Doubles' : 'Singles'} · {t.format === 'elimination' ? 'Elimination' : 'Round Robin'} · {t.participants.length} players</div>
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-3">
-                          <span className="text-[13px] text-[var(--text2)]">{t.matches.length} matches</span>
-                          <span className="text-[var(--text3)] text-[18px]">{isOpen ? '▲' : '▼'}</span>
+      {loading ? (
+        <EmptyState icon="⏳" text="Loading history…" />
+      ) : history.length === 0 ? (
+        <EmptyState icon="📋" text="No tournaments recorded yet." />
+      ) : (
+        <div className="t-history-list">
+          {history.map(t => {
+            const id = String(t._id);
+            const isOpen = expanded === id;
+            const date = new Date(t.createdAt).toLocaleDateString(undefined, { dateStyle: 'medium' });
+            return (
+              <div key={id} className="t-history-card">
+                <div className="t-history-header" onClick={() => setExpanded(isOpen ? null : id)}>
+                  <div className="t-history-info">
+                    <span className="t-history-trophy">🏆</span>
+                    <div>
+                      <p className="t-history-champion">{t.champion}</p>
+                      <p className="t-history-meta">
+                        {date} · {t.gameType === 'doubles' ? 'Doubles' : 'Singles'} · {t.format === 'elimination' ? 'Elimination' : 'Round Robin'} · {t.participants.length} players
+                      </p>
+                    </div>
+                  </div>
+                  <div className="t-history-right">
+                    <span className="t-history-count">{t.matches.length} match{t.matches.length !== 1 ? 'es' : ''}</span>
+                    <span className={`t-history-chevron${isOpen ? ' open' : ''}`}>▼</span>
+                  </div>
+                </div>
+
+                {isOpen && (
+                  <div className="t-history-body">
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 20, marginBottom: 16 }}>
+                      <div>
+                        <p className="t-hist-section-label">Participants</p>
+                        <div className="participants-wrap">
+                          {t.participants.map(p => (
+                            <span key={p.name} className={`participant-chip ${p.group}`}>{p.name}</span>
+                          ))}
                         </div>
                       </div>
-                    </button>
-
-                    {isOpen && (
-                      <div className="mt-4 border-t border-[var(--border)] pt-4">
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 mb-4">
-                          <div>
-                            <div className="text-[12px] font-bold uppercase tracking-widest text-[var(--text3)] mb-2">Participants</div>
-                            <div className="flex flex-wrap gap-1.5">
-                              {t.participants.map(p => (
-                                <span key={p.name} className={`text-[12px] px-2 py-0.5 rounded-full border font-medium ${p.group==='pro'?'bg-[rgba(245,158,11,0.1)] text-[var(--pro-color)] border-[rgba(245,158,11,0.3)]':'bg-[rgba(34,197,94,0.1)] text-[var(--beg-color)] border-[rgba(34,197,94,0.3)]'}`}>
-                                  {p.name}
-                                </span>
-                              ))}
-                            </div>
-                          </div>
-                          {t.standings && (
-                            <div>
-                              <div className="text-[12px] font-bold uppercase tracking-widest text-[var(--text3)] mb-2">Final Standings</div>
-                              {t.standings.slice(0,3).map(s => (
-                                <div key={s.rank} className="flex items-center gap-2 text-[13px] py-0.5">
-                                  <span>{s.rank===1?'🥇':s.rank===2?'🥈':'🥉'}</span>
-                                  <span className="font-semibold">{s.name}</span>
-                                  <span className="text-[var(--text3)]">{s.wins}W {s.losses}L · {s.pts}pts</span>
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                        </div>
+                      {t.standings && t.standings.length > 0 && (
                         <div>
-                          <div className="text-[12px] font-bold uppercase tracking-widest text-[var(--text3)] mb-2">Match Results</div>
-                          <div className="flex flex-col gap-1.5 max-h-[240px] overflow-y-auto">
-                            {t.matches.map((m, i) => (
-                              <div key={i} className="flex items-center gap-3 bg-[var(--bg3)] border border-[var(--border)] rounded-lg px-3 py-2 text-[13px]">
-                                <span className="text-[var(--text3)] text-[11px] whitespace-nowrap">{m.round}</span>
-                                <span className="flex-1">
-                                  <span style={{color:m.winner===m.teamA?'var(--success)':'var(--text3)',fontWeight:m.winner===m.teamA?700:undefined}}>{m.teamA}</span>
-                                  <span className="text-[var(--text3)]"> vs </span>
-                                  <span style={{color:m.winner===m.teamB?'var(--success)':'var(--text3)',fontWeight:m.winner===m.teamB?700:undefined}}>{m.teamB}</span>
-                                </span>
-                                <span className="font-bold text-[var(--accent2)] tracking-widest">{m.scoreA}–{m.scoreB}</span>
-                              </div>
-                            ))}
-                          </div>
+                          <p className="t-hist-section-label">Final Standings</p>
+                          {t.standings.slice(0, 5).map(s => (
+                            <div key={s.rank} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, padding: '3px 0' }}>
+                              <span>{s.rank === 1 ? '🥇' : s.rank === 2 ? '🥈' : s.rank === 3 ? '🥉' : `${s.rank}.`}</span>
+                              <span style={{ fontWeight: 600, flex: 1 }}>{s.name}</span>
+                              <span style={{ color: 'var(--text3)', fontSize: 12 }}>{s.wins}W {s.losses}L · {s.pts}pts</span>
+                            </div>
+                          ))}
                         </div>
-                      </div>
-                    )}
-                  </Card>
-                );
-              })}
-            </div>
-      }
-    </div>
-  );
-}
+                      )}
+                    </div>
 
-/* ════════════════════════════════════════════════════
-   CONFETTI
-════════════════════════════════════════════════════ */
-function Confetti({ active }: { active: boolean }) {
-  const [pieces, setPieces] = useState<{id:number;left:string;color:string;width:string;height:string;duration:string;delay:string;isCircle:boolean}[]>([]);
-  useEffect(() => {
-    if (!active) { setPieces([]); return; }
-    const colors = ['#39ff14','#00e5ff','#ff6b35','#f59e0b','#a78bfa','#ec4899','#ffffff'];
-    setPieces(Array.from({length:120},(_,i) => ({id:i,left:`${Math.random()*100}vw`,color:colors[Math.floor(Math.random()*colors.length)],width:`${Math.random()*8+6}px`,height:`${Math.random()*8+6}px`,duration:`${Math.random()*3+2}s`,delay:`${Math.random()*2}s`,isCircle:Math.random()>0.5})));
-    const t = setTimeout(() => setPieces([]), 6000);
-    return () => clearTimeout(t);
-  }, [active]);
-  if (!pieces.length) return null;
-  return (
-    <div className="fixed inset-0 pointer-events-none overflow-hidden z-[999]">
-      {pieces.map(p => <div key={p.id} className="absolute top-[-20px] animate-fall" style={{left:p.left,backgroundColor:p.color,width:p.width,height:p.height,animationDuration:p.duration,animationDelay:p.delay,borderRadius:p.isCircle?'50%':'2px'}} />)}
+                    <p className="t-hist-section-label">Match Results</p>
+                    <div className="t-match-list">
+                      {t.matches.map((m, i) => (
+                        <div key={i} className="t-match-row">
+                          <span className="t-match-round">{m.round}</span>
+                          <span className="t-match-teams">
+                            <span style={{ color: m.winner === m.teamA ? 'var(--success)' : 'var(--text3)', fontWeight: m.winner === m.teamA ? 700 : undefined }}>{m.teamA}</span>
+                            <span style={{ color: 'var(--text3)' }}> vs </span>
+                            <span style={{ color: m.winner === m.teamB ? 'var(--success)' : 'var(--text3)', fontWeight: m.winner === m.teamB ? 700 : undefined }}>{m.teamB}</span>
+                          </span>
+                          <span className="t-match-score">{m.scoreA}–{m.scoreB}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
@@ -742,34 +862,27 @@ export default function TournamentApp() {
   const [showRoundBanner, setShowRoundBanner] = useState(false);
   const [confettiActive, setConfettiActive] = useState(false);
 
-  // Fetch players when moving to setup
   const fetchPlayers = useCallback(async () => {
-    const res = await fetch('/api/players');
-    const data: PlayerDoc[] = await res.json();
-    setAllPlayers(data);
+    const r = await fetch('/api/players');
+    setAllPlayers(await r.json());
   }, []);
 
   useEffect(() => {
     if (view === 'setup') fetchPlayers();
   }, [view, fetchPlayers]);
 
-  /* toggle player in/out of today's tournament */
   function togglePlayer(p: PlayerDoc) {
+    const player: Player = { name: p.name, group: p.group };
     setTourney(s => {
-      const group = p.group;
-      const list = group === 'pro' ? s.pros : s.beginners;
-      const exists = list.some(x => x.name === p.name);
-      const asPlayer: Player = { name: p.name, group };
-      if (group === 'pro') {
-        return { ...s, pros: exists ? s.pros.filter(x => x.name !== p.name) : [...s.pros, asPlayer] };
+      if (p.group === 'pro') {
+        const exists = s.pros.some(x => x.name === p.name);
+        return { ...s, pros: exists ? s.pros.filter(x => x.name !== p.name) : [...s.pros, player] };
       } else {
-        return { ...s, beginners: exists ? s.beginners.filter(x => x.name !== p.name) : [...s.beginners, asPlayer] };
+        const exists = s.beginners.some(x => x.name === p.name);
+        return { ...s, beginners: exists ? s.beginners.filter(x => x.name !== p.name) : [...s.beginners, player] };
       }
     });
   }
-
-  function setGameType(t: GameType) { setTourney(s => ({ ...s, gameType: t })); }
-  function setFormat(f: TourneyFormat) { setTourney(s => ({ ...s, tourneyFormat: f })); }
 
   function startTournament() {
     resetMatchCounter();
@@ -791,7 +904,9 @@ export default function TournamentApp() {
         ...r,
         matches: r.matches.map(m => {
           if (m.id !== matchId || m.completed) return m;
-          return team === 'A' ? { ...m, scoreA: Math.max(0, Math.min(30, m.scoreA + delta)) } : { ...m, scoreB: Math.max(0, Math.min(30, m.scoreB + delta)) };
+          return team === 'A'
+            ? { ...m, scoreA: Math.max(0, Math.min(30, m.scoreA + delta)) }
+            : { ...m, scoreB: Math.max(0, Math.min(30, m.scoreB + delta)) };
         }),
       })),
     }));
@@ -810,15 +925,18 @@ export default function TournamentApp() {
         matches: r.matches.map(m => m.id === matchId ? { ...m, winner, completed: true } : m),
       }));
 
+      // Update RR standings
       let newStandings = { ...s.rrStandings };
       if (s.tourneyFormat === 'roundrobin') {
         const loser = winner.id === match.teamA.id ? match.teamB! : match.teamA;
-        const sFor = winner.id === match.teamA.id ? match.scoreA : match.scoreB;
+        const sFor     = winner.id === match.teamA.id ? match.scoreA : match.scoreB;
         const sAgainst = winner.id === match.teamA.id ? match.scoreB : match.scoreA;
+        const wPrev = newStandings[winner.id] ?? { wins:0, losses:0, pts:0, scoreFor:0, scoreAgainst:0 };
+        const lPrev = newStandings[loser.id]  ?? { wins:0, losses:0, pts:0, scoreFor:0, scoreAgainst:0 };
         newStandings = {
           ...newStandings,
-          [winner.id]: { wins:(newStandings[winner.id]?.wins??0)+1, losses:newStandings[winner.id]?.losses??0, pts:(newStandings[winner.id]?.pts??0)+3, scoreFor:(newStandings[winner.id]?.scoreFor??0)+sFor, scoreAgainst:(newStandings[winner.id]?.scoreAgainst??0)+sAgainst },
-          [loser.id]: { wins:newStandings[loser.id]?.wins??0, losses:(newStandings[loser.id]?.losses??0)+1, pts:newStandings[loser.id]?.pts??0, scoreFor:(newStandings[loser.id]?.scoreFor??0)+sAgainst, scoreAgainst:(newStandings[loser.id]?.scoreAgainst??0)+sFor },
+          [winner.id]: { ...wPrev, wins: wPrev.wins+1, pts: wPrev.pts+3, scoreFor: wPrev.scoreFor+sFor, scoreAgainst: wPrev.scoreAgainst+sAgainst },
+          [loser.id]:  { ...lPrev, losses: lPrev.losses+1, scoreFor: lPrev.scoreFor+sAgainst, scoreAgainst: lPrev.scoreAgainst+sFor },
         };
       }
 
@@ -834,6 +952,7 @@ export default function TournamentApp() {
     if (ns.tourneyFormat === 'elimination') {
       const round = ns.rounds[ns.currentRoundIdx];
       if (!round?.matches.every(m => m.completed)) return;
+
       const winners = round.matches.map(m => m.winner).filter(Boolean) as Team[];
       if (winners.length === 1) {
         setTimeout(() => {
@@ -842,7 +961,7 @@ export default function TournamentApp() {
           setConfettiActive(true);
           saveTournament(ns, winners[0]);
           setTimeout(() => setConfettiActive(false), 6500);
-        }, 800);
+        }, 600);
       } else {
         setShowRoundBanner(true);
         setTimeout(() => {
@@ -854,9 +973,11 @@ export default function TournamentApp() {
         }, 1800);
       }
     } else {
+      // RR: check all rounds complete
       if (!ns.rounds.every(r => r.matches.every(m => m.completed))) {
+        // check if an individual round just finished → show banner
         const idx = ns.rounds.findIndex(r => r.matches.some(m => !m.completed));
-        if (idx > 0 && ns.rounds[idx-1].matches.every(m => m.completed)) {
+        if (idx > 0 && ns.rounds[idx - 1].matches.every(m => m.completed)) {
           setShowRoundBanner(true);
           setTimeout(() => setShowRoundBanner(false), 1500);
         }
@@ -869,7 +990,7 @@ export default function TournamentApp() {
         setConfettiActive(true);
         saveTournament(ns, sorted[0].team);
         setTimeout(() => setConfettiActive(false), 6500);
-      }, 800);
+      }, 600);
     }
   }
 
@@ -880,18 +1001,9 @@ export default function TournamentApp() {
           pts: r.stats.pts, scoreFor: r.stats.scoreFor, scoreAgainst: r.stats.scoreAgainst,
         }))
       : undefined;
-
     await fetch('/api/history', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        gameType: ns.gameType,
-        format: ns.tourneyFormat,
-        participants: [...ns.pros, ...ns.beginners],
-        champion: champion.name,
-        matches: ns.history,
-        standings,
-      }),
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ gameType: ns.gameType, format: ns.tourneyFormat, participants: [...ns.pros, ...ns.beginners], champion: champion.name, matches: ns.history, standings }),
     });
   }
 
@@ -902,34 +1014,33 @@ export default function TournamentApp() {
     setView('setup');
   }
 
-  const headerBadge = view === 'roster' ? 'Roster' : view === 'setup' ? 'Setup' : view === 'history' ? 'History' : view === 'champion' ? 'Finished' : (getCurrentRound(tourney)?.name ?? 'Finished');
+  const headerBadge = view === 'roster' ? 'Roster' : view === 'history' ? 'History' : view === 'champion' ? 'Finished' : view === 'setup' ? 'Setup' : (getCurrentRound(tourney)?.name ?? 'Finished');
 
   return (
     <>
       <Confetti active={confettiActive} />
 
-      {/* Header */}
-      <header className="bg-gradient-to-r from-[var(--bg2)] to-[var(--bg3)] border-b border-[var(--border)] px-6 flex items-center justify-between h-16 sticky top-0 z-[100] backdrop-blur-[10px]">
-        <div className="flex items-center gap-2.5 text-[20px] font-extrabold tracking-tight">
-          🏸 <span className="text-[var(--accent)]">Smash</span>Tour
-        </div>
-        <div className="flex items-center gap-3">
+      <header className="app-header">
+        <div className="logo">🏸 <span>Smash</span>Tour</div>
+        <div className="header-right">
           {(view === 'tournament' || view === 'champion') && (
-            <button onClick={() => setView('history')} className="text-[13px] text-[var(--text2)] hover:text-[var(--accent2)] cursor-pointer bg-none border-none transition-colors">📜 History</button>
+            <button className="nav-link" onClick={() => setView('history')}>📜 History</button>
           )}
-          <div className="bg-[var(--bg4)] border border-[var(--border)] rounded-full px-3.5 py-1 text-[13px] text-[var(--text2)] font-medium">{headerBadge}</div>
+          {(view === 'tournament' || view === 'champion') && (
+            <button className="nav-link" onClick={() => setView('roster')}>👥 Roster</button>
+          )}
+          <span className="badge-pill">{headerBadge}</span>
         </div>
       </header>
 
-      <div className="max-w-[1200px] mx-auto px-5 py-8 pb-20">
-        {view === 'roster' && <RosterScreen onDone={() => setView('setup')} />}
-        {view === 'setup' && (
+      <div className="app-wrap">
+        {view === 'roster'     && <RosterScreen onDone={() => setView('setup')} />}
+        {view === 'setup'      && (
           <SetupScreen
-            state={tourney}
-            allPlayers={allPlayers}
+            state={tourney} allPlayers={allPlayers}
             onTogglePlayer={togglePlayer}
-            onSetGameType={setGameType}
-            onSetFormat={setFormat}
+            onSetGameType={t => setTourney(s => ({ ...s, gameType: t }))}
+            onSetFormat={f => setTourney(s => ({ ...s, tourneyFormat: f }))}
             onStart={startTournament}
             onBack={() => setView('roster')}
           />
@@ -951,7 +1062,9 @@ export default function TournamentApp() {
             onViewHistory={() => setView('history')}
           />
         )}
-        {view === 'history' && <HistoryScreen onBack={() => setView(tourney.champion ? 'champion' : tourney.rounds.length > 0 ? 'tournament' : 'roster')} />}
+        {view === 'history' && (
+          <HistoryScreen onBack={() => setView(tourney.rounds.length > 0 ? (tourney.champion ? 'champion' : 'tournament') : 'roster')} />
+        )}
       </div>
     </>
   );
