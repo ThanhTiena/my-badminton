@@ -114,10 +114,10 @@ export function computeDeltas(
   for (const name of runnerNames) get(name).runnerUps++;
 
   // Round pointsScored / pointsConceded to 1 decimal
-  for (const d of map.values()) {
+  Array.from(map.values()).forEach(d => {
     d.pointsScored   = Math.round(d.pointsScored   * 10) / 10;
     d.pointsConceded = Math.round(d.pointsConceded * 10) / 10;
-  }
+  });
 
   return map;
 }
