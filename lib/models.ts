@@ -36,6 +36,10 @@ export interface CourtSessionDoc {
   players: SessionPlayer[];
   /** Optional free-text memo (e.g. "Court 3, Saturday session") */
   note?: string;
+  /** If true, this session has a notable event worth drawing attention to */
+  highlight?: boolean;
+  /** Optional note explaining what the highlight is */
+  highlightNote?: string;
   importedAt: Date;
 }
 

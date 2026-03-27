@@ -1507,6 +1507,19 @@ function PaymentScreen({ onBack, tournamentPlayers }: { onBack: () => void; tour
   const [summLoading, setSummLoading] = useState(false);
   const [showRounded, setShowRounded] = useState(false);   // global round toggle for summary tab
 
+  /* ── Edit session modal state ── */
+  const [editingSession,    setEditingSession]    = useState<CourtSessionDoc | null>(null);
+  const [editDate,          setEditDate]          = useState('');
+  const [editCourtFee,      setEditCourtFee]      = useState('');
+  const [editNumShut,       setEditNumShut]       = useState('');
+  const [editUnitPrice,     setEditUnitPrice]     = useState('');
+  const [editNote,          setEditNote]          = useState('');
+  const [editHighlight,     setEditHighlight]     = useState(false);
+  const [editHighlightNote, setEditHighlightNote] = useState('');
+  const [editSelected,      setEditSelected]      = useState<Record<string, boolean>>({});
+  const [editSaving,        setEditSaving]        = useState(false);
+  const [editResult,        setEditResult]        = useState<string | null>(null);
+
   /* ── Import state ── */
   const [importText,    setImportText]    = useState('');
   const [parsedRows,    setParsedRows]    = useState<ImportRow[]>([]);
@@ -1649,6 +1662,61 @@ function PaymentScreen({ onBack, tournamentPlayers }: { onBack: () => void; tour
       setParseErrors([]);
     } else {
       setImportResult(`❌ Import failed: ${data.error}`);
+    }
+  }
+
+  function openEditSession(s: CourtSessionDoc) {
+    setEditingSession(s);
+    setEditDate(s.sessionDate);
+    setEditCourtFee(String(s.courtFee));
+    setEditNumShut(String(s.numShuttlecocks));
+    setEditUnitPrice(String(s.shuttlecockUnitPrice));
+    setEditNote(s.note ?? '');
+    setEditHighlight(s.highlight ?? false);
+    setEditHighlightNote(s.highlightNote ?? '');
+    // Pre-select current players
+    const sel: Record<string, boolean> = {};
+    for (const p of s.players) sel[p.name] = true;
+    setEditSelected(sel);
+    setEditResult(null);
+  }
+
+  async function saveEditSession() {
+    if (!editingSession) return;
+    setEditSaving(true);
+    setEditResult(null);
+    const selectedPlayers = [...(editingSession.players.map((p: { name: string }) => p.name)), ...allDbPlayers]
+      .filter((n, i, arr) => arr.indexOf(n) === i)
+      .filter((n: string) => editSelected[n]);
+    const body = {
+      date:                 editDate,
+      courtFee:             parseFloat(editCourtFee) || 0,
+      numShuttlecocks:      parseFloat(editNumShut) || 0,
+      shuttlecockUnitPrice: parseFloat(editUnitPrice) || 0,
+      players:              selectedPlayers,
+      note:                 editNote,
+      highlight:            editHighlight,
+      highlightNote:        editHighlightNote,
+    };
+    const res = await fetch(`/api/payment/sessions/${String(editingSession._id)}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    setEditSaving(false);
+    if (res.ok) {
+      setEditResult('✅ Saved!');
+      // Refresh summary
+      const qs = summaryMode === 'range'
+        ? `mode=range&from=${rangeFrom}&to=${rangeTo}`
+        : `mode=${summaryMode}&ref=${summaryRef}`;
+      fetch(`/api/payment/summary?${qs}`)
+        .then(r => r.json())
+        .then((data: SummaryData) => setSummary(data));
+      setTimeout(() => setEditingSession(null), 800);
+    } else {
+      const data = await res.json();
+      setEditResult(`❌ ${data.error}`);
     }
   }
 
@@ -2100,14 +2168,38 @@ function PaymentScreen({ onBack, tournamentPlayers }: { onBack: () => void; tour
                         <td style={{ ...grandStyle, borderRight: 'none' }}>{formatVND(grandTotal)}</td>
                       </tr>
 
-                      {/* ── Delete row ── */}
+                      {/* ── Highlight row ── */}
+                      <tr>
+                        <td style={{ ...stickyNameStyle, fontSize: 11, color: 'var(--text3)', fontWeight: 400 }}>
+                          Highlight
+                        </td>
+                        {weeks.map(([, wSessions]) =>
+                          wSessions.map((s: CourtSessionDoc) => (
+                            <td key={`hl-${s.sessionDate}`} style={{ ...cellStyle, textAlign: 'center', padding: '4px 6px' }}>
+                              {s.highlight
+                                ? <span title={s.highlightNote || 'Notable session'} style={{ fontSize: 16, cursor: 'default' }}>⭐</span>
+                                : <span style={{ color: 'var(--text3)', fontSize: 12 }}>—</span>
+                              }
+                            </td>
+                          ))
+                        )}
+                        {weeks.map(([wk]) => <td key={`hl-wk-${wk}`} style={cellStyle} />)}
+                        <td style={{ ...cellStyle, borderRight: 'none' }} />
+                      </tr>
+
+                      {/* ── Actions row ── */}
                       <tr>
                         <td style={{ ...stickyNameStyle, fontSize: 11, color: 'var(--text3)', fontWeight: 400 }}>
                           Actions
                         </td>
                         {weeks.map(([, wSessions]) =>
                           wSessions.map((s: CourtSessionDoc) => (
-                            <td key={`del-${s.sessionDate}`} style={{ ...cellStyle, textAlign: 'center', padding: '4px 6px' }}>
+                            <td key={`act-${s.sessionDate}`} style={{ ...cellStyle, textAlign: 'center', padding: '4px 4px' }}>
+                              <button
+                                onClick={() => openEditSession(s)}
+                                title="Edit session"
+                                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--accent2)', fontSize: 14, lineHeight: 1, marginRight: 4 }}
+                              >✏️</button>
                               <button
                                 onClick={() => deleteSession(String(s._id))}
                                 title="Delete session"
@@ -2116,7 +2208,7 @@ function PaymentScreen({ onBack, tournamentPlayers }: { onBack: () => void; tour
                             </td>
                           ))
                         )}
-                        {weeks.map(([wk]) => <td key={`del-wk-${wk}`} style={cellStyle} />)}
+                        {weeks.map(([wk]) => <td key={`act-wk-${wk}`} style={cellStyle} />)}
                         <td style={{ ...cellStyle, borderRight: 'none' }} />
                       </tr>
                     </tbody>
@@ -2125,11 +2217,155 @@ function PaymentScreen({ onBack, tournamentPlayers }: { onBack: () => void; tour
 
                 {/* Legend */}
                 <p style={{ fontSize: 11, color: 'var(--text3)', marginTop: 10 }}>
-                  💡 Hover any cell to see court + shuttle breakdown. Week subtotals group by ISO week.
+                  💡 Hover any cell to see court + shuttle breakdown. ⭐ = highlighted session (hover for note).
                 </p>
               </>
             );
           })()}
+        </div>
+      )}
+
+      {/* ═══════════ EDIT SESSION MODAL ═══════════ */}
+      {editingSession && (
+        <div style={{
+          position: 'fixed', inset: 0, zIndex: 100,
+          background: 'rgba(0,0,0,.65)', backdropFilter: 'blur(4px)',
+          display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
+        }} onClick={e => { if (e.target === e.currentTarget) setEditingSession(null); }}>
+          <div style={{
+            background: 'var(--card)', borderRadius: '20px 20px 0 0',
+            width: '100%', maxWidth: 640, maxHeight: '90vh', overflowY: 'auto',
+            padding: '24px 20px 32px', boxShadow: '0 -8px 40px rgba(0,0,0,.4)',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18 }}>
+              <p style={{ fontWeight: 800, fontSize: 17 }}>✏️ Edit Session — {editingSession.sessionDate}</p>
+              <button onClick={() => setEditingSession(null)} style={{ background: 'none', border: 'none', color: 'var(--text3)', fontSize: 22, cursor: 'pointer', lineHeight: 1 }}>✕</button>
+            </div>
+
+            {/* Date + Note */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 14 }}>
+              <div>
+                <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text2)', display: 'block', marginBottom: 4 }}>📅 Date</label>
+                <input type="date" className="input" style={{ width: '100%' }} value={editDate} onChange={({ target }: { target: HTMLInputElement }) => setEditDate(target.value)} />
+              </div>
+              <div>
+                <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text2)', display: 'block', marginBottom: 4 }}>📝 Note</label>
+                <input type="text" className="input" style={{ width: '100%' }} value={editNote} onChange={({ target }: { target: HTMLInputElement }) => setEditNote(target.value)} />
+              </div>
+            </div>
+
+            {/* Cost fields */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12, marginBottom: 14 }}>
+              <div>
+                <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text2)', display: 'block', marginBottom: 4 }}>🏟 Court Fee (₫)</label>
+                <input type="number" min={0} className="input" style={{ width: '100%' }} value={editCourtFee} onChange={({ target }: { target: HTMLInputElement }) => setEditCourtFee(target.value)} />
+              </div>
+              <div>
+                <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text2)', display: 'block', marginBottom: 4 }}>🏸 Shuttlecocks</label>
+                <input type="number" min={0} className="input" style={{ width: '100%' }} value={editNumShut} onChange={({ target }: { target: HTMLInputElement }) => setEditNumShut(target.value)} />
+              </div>
+              <div>
+                <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text2)', display: 'block', marginBottom: 4 }}>💲 Price/shuttlecock (₫)</label>
+                <input type="number" min={0} className="input" style={{ width: '100%' }} value={editUnitPrice} onChange={({ target }: { target: HTMLInputElement }) => setEditUnitPrice(target.value)} />
+              </div>
+            </div>
+
+            {/* Highlight toggle */}
+            <div style={{ background: 'var(--bg3)', borderRadius: 10, padding: '12px 14px', marginBottom: 14 }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', fontWeight: 600, fontSize: 13 }}>
+                <input
+                  type="checkbox"
+                  checked={editHighlight}
+                  onChange={({ target }: { target: HTMLInputElement }) => setEditHighlight(target.checked)}
+                  style={{ width: 18, height: 18 }}
+                />
+                ⭐ Mark as highlight session
+              </label>
+              {editHighlight && (
+                <input
+                  type="text"
+                  className="input"
+                  style={{ width: '100%', marginTop: 10 }}
+                  placeholder="What's notable about this session? (optional)"
+                  value={editHighlightNote}
+                  onChange={({ target }: { target: HTMLInputElement }) => setEditHighlightNote(target.value)}
+                />
+              )}
+            </div>
+
+            {/* Player selection */}
+            <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text2)', display: 'block', marginBottom: 8 }}>
+              👥 Players ({Object.values(editSelected).filter(Boolean).length} selected)
+            </label>
+            {/* Current session players first */}
+            <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6 }}>
+              In this session
+            </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 10 }}>
+              {editingSession.players.map(p => {
+                const on = editSelected[p.name] ?? true;
+                return (
+                  <button
+                    key={p.name}
+                    onClick={() => setEditSelected((prev: Record<string, boolean>) => ({ ...prev, [p.name]: !prev[p.name] }))}
+                    style={{
+                      padding: '5px 12px', borderRadius: 20, fontSize: 13, fontWeight: 600, cursor: 'pointer',
+                      border: `2px solid ${on ? 'var(--accent)' : 'var(--border)'}`,
+                      background: on ? 'rgba(57,255,20,.12)' : 'var(--bg3)',
+                      color: on ? 'var(--accent)' : 'var(--text3)',
+                    }}
+                  >{on ? '✓ ' : ''}{p.name}</button>
+                );
+              })}
+            </div>
+            {/* Other DB players not in session */}
+            {(() => {
+              const inSession = new Set(editingSession.players.map(p => p.name));
+              const others = allDbPlayers.filter((n: string) => !inSession.has(n));
+              if (others.length === 0) return null;
+              return (
+                <>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6 }}>
+                    Other players
+                  </div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 14 }}>
+                    {others.map((name: string) => {
+                      const on = editSelected[name] ?? false;
+                      return (
+                        <button
+                          key={name}
+                          onClick={() => setEditSelected((prev: Record<string, boolean>) => ({ ...prev, [name]: !prev[name] }))}
+                          style={{
+                            padding: '5px 12px', borderRadius: 20, fontSize: 13, fontWeight: 600, cursor: 'pointer',
+                            border: `2px solid ${on ? 'var(--accent2)' : 'var(--border)'}`,
+                            background: on ? 'rgba(168,85,247,.12)' : 'var(--bg3)',
+                            color: on ? 'var(--accent2)' : 'var(--text3)',
+                          }}
+                        >{on ? '✓ ' : ''}{name}</button>
+                      );
+                    })}
+                  </div>
+                </>
+              );
+            })()}
+
+            {editResult && (
+              <p style={{ fontSize: 13, fontWeight: 700, color: editResult.startsWith('✅') ? 'var(--success)' : 'var(--danger)', marginBottom: 12 }}>
+                {editResult}
+              </p>
+            )}
+
+            <div style={{ display: 'flex', gap: 10 }}>
+              <div style={{ flex: 1 }}>
+                <Btn variant="primary" size="lg" full disabled={editSaving} onClick={saveEditSession}>
+                  {editSaving ? '⏳ Saving…' : '💾 Save Changes'}
+                </Btn>
+              </div>
+              <Btn variant="ghost" size="lg" onClick={() => setEditingSession(null)}>
+                Cancel
+              </Btn>
+            </div>
+          </div>
         </div>
       )}
 

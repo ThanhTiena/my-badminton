@@ -1,14 +1,17 @@
 /**
  * GET    /api/payment/sessions/[id]   — fetch a single session
+ * PATCH  /api/payment/sessions/[id]   — update a session (costs, players, note, highlight)
  * DELETE /api/payment/sessions/[id]   — remove a single session
  */
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { ObjectId } from 'mongodb';
 import client from '@/lib/mongodb';
-import type { CourtSessionDoc } from '@/lib/models';
+import type { CourtSessionDoc, PaymentConfigDoc, ImportRow } from '@/lib/models';
+import { computeSessionAmounts, getISOWeek } from '@/lib/payment';
 
-const DB  = 'smashtour';
-const COL = 'court_sessions';
+const DB      = 'smashtour';
+const COL     = 'court_sessions';
+const CFG_COL = 'payment_configs';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   const { id } = req.query as { id: string };
@@ -25,12 +28,80 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(200).json(doc);
   }
 
+  if (req.method === 'PATCH') {
+    const body = req.body as Partial<ImportRow & { highlight?: boolean; highlightNote?: string }>;
+
+    // Build the $set payload — only include fields that were sent
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const $set: Record<string, any> = {};
+
+    const hasCosts =
+      body.courtFee !== undefined ||
+      body.numShuttlecocks !== undefined ||
+      body.shuttlecockUnitPrice !== undefined ||
+      (body.players && body.players.length > 0);
+
+    if (hasCosts) {
+      // Fetch the existing doc to fill in any missing fields
+      const existing = await col.findOne({ _id: oid });
+      if (!existing) return res.status(404).json({ error: 'Session not found' });
+
+      const date            = body.date ?? existing.sessionDate;
+      const courtFee        = body.courtFee        ?? existing.courtFee;
+      const numShuttlecocks = body.numShuttlecocks ?? existing.numShuttlecocks;
+      const shuttlecockUnitPrice = body.shuttlecockUnitPrice ?? existing.shuttlecockUnitPrice;
+      const playerNames     = (body.players && body.players.length > 0) ? body.players : existing.players.map(p => p.name);
+
+      // Re-fetch weights
+      const cfgCol  = client.db(DB).collection<PaymentConfigDoc>(CFG_COL);
+      const allCfgs = await cfgCol.find({}).toArray();
+      const weightMap = new Map<string, number>();
+      for (const cfg of allCfgs) weightMap.set(cfg.playerName.toLowerCase(), cfg.smashWeight);
+
+      const playersWithWeight = playerNames.map((name: string) => ({
+        name,
+        smashWeight: weightMap.get(name.toLowerCase()) ?? 1.0,
+      }));
+
+      const { shuttlecockTotal, totalCost, players } = computeSessionAmounts({
+        players: playersWithWeight,
+        courtFee,
+        numShuttlecocks,
+        shuttlecockUnitPrice,
+      });
+
+      const d = new Date(date);
+      $set.sessionDate          = date;
+      $set.year                 = d.getFullYear();
+      $set.month                = d.getMonth() + 1;
+      $set.week                 = getISOWeek(date);
+      $set.courtFee             = courtFee;
+      $set.numShuttlecocks      = numShuttlecocks;
+      $set.shuttlecockUnitPrice = shuttlecockUnitPrice;
+      $set.shuttlecockTotal     = shuttlecockTotal;
+      $set.totalCost            = totalCost;
+      $set.players              = players;
+    }
+
+    if (body.note !== undefined)          $set.note          = body.note;
+    if (body.highlight !== undefined)     $set.highlight     = body.highlight;
+    if (body.highlightNote !== undefined) $set.highlightNote = body.highlightNote;
+
+    if (Object.keys($set).length === 0) {
+      return res.status(400).json({ error: 'No updatable fields provided' });
+    }
+
+    await col.updateOne({ _id: oid }, { $set });
+    const updated = await col.findOne({ _id: oid });
+    return res.status(200).json(updated);
+  }
+
   if (req.method === 'DELETE') {
     const result = await col.deleteOne({ _id: oid });
     if (result.deletedCount === 0) return res.status(404).json({ error: 'Session not found' });
     return res.status(200).json({ deleted: true });
   }
 
-  res.setHeader('Allow', ['GET', 'DELETE']);
+  res.setHeader('Allow', ['GET', 'PATCH', 'DELETE']);
   res.status(405).end();
 }
