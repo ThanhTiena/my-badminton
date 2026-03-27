@@ -1860,11 +1860,50 @@ function PaymentScreen({ onBack, tournamentPlayers }: { onBack: () => void; tour
    ROOT APP
 ════════════════════════════════════════════════════ */
 export default function TournamentApp() {
-  const [view, setView] = useState<AppView>('roster');
-  const [allPlayers, setAllPlayers] = useState<PlayerDoc[]>([]);
-  const [tourney, setTourney] = useState<TournamentState>(INITIAL_TOURNEY);
+  const [view,            setView]            = useState<AppView>('roster');
+  const [allPlayers,      setAllPlayers]      = useState<PlayerDoc[]>([]);
+  const [tourney,         setTourney]         = useState<TournamentState>(INITIAL_TOURNEY);
   const [showRoundBanner, setShowRoundBanner] = useState(false);
-  const [confettiActive, setConfettiActive] = useState(false);
+  const [confettiActive,  setConfettiActive]  = useState(false);
+  const [appLoading,      setAppLoading]      = useState(true);   // true while restoring from DB
+
+  // Debounce timer ref for auto-save
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  /* ── Persist current tournament state to DB ─────────────────
+     Called after every mutation.  Debounced 400 ms so rapid score
+     taps don't flood the network. */
+  const persistTourney = useCallback((state: TournamentState) => {
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(() => {
+      fetch('/api/tournament/active', {
+        method:  'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify(state),
+      });
+    }, 400);
+  }, []);
+
+  /* ── Clear the active tournament from DB ─────────────────── */
+  const clearActiveTourney = useCallback(() => {
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    fetch('/api/tournament/active', { method: 'DELETE' });
+  }, []);
+
+  /* ── On mount: restore from DB ──────────────────────────────
+     If a tournament was in progress it comes back exactly as left. */
+  useEffect(() => {
+    fetch('/api/tournament/active')
+      .then(r => r.json())
+      .then((doc: { state: TournamentState } | null) => {
+        if (doc?.state && doc.state.rounds.length > 0 && !doc.state.champion) {
+          setTourney(doc.state);
+          setView('tournament');
+        }
+        setAppLoading(false);
+      })
+      .catch(() => setAppLoading(false));
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const fetchPlayers = useCallback(async () => {
     const r = await fetch('/api/players');
@@ -1874,13 +1913,6 @@ export default function TournamentApp() {
   useEffect(() => {
     if (view === 'setup') fetchPlayers();
   }, [view, fetchPlayers]);
-
-  // Auto-resume: if a tournament is in progress when the app loads, go straight to it
-  useEffect(() => {
-    if (tourney.rounds.length > 0 && !tourney.champion) {
-      setView('tournament');
-    }
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   function togglePlayer(p: PlayerDoc) {
     const player: Player = { name: p.name, group: p.group };
@@ -1898,29 +1930,36 @@ export default function TournamentApp() {
   function startTournament() {
     resetMatchCounter();
     const teams = buildTeams(tourney);
+    let newState: TournamentState;
     if (tourney.tourneyFormat === 'elimination') {
       const rounds = buildEliminationRounds(teams);
-      setTourney(s => ({ ...s, teams, rounds, currentRoundIdx: 0, history: [], champion: null, rrStandings: {} }));
+      newState = { ...tourney, teams, rounds, currentRoundIdx: 0, history: [], champion: null, rrStandings: {} };
     } else {
       const { rounds, rrStandings } = buildRoundRobin(teams);
-      setTourney(s => ({ ...s, teams, rounds, rrStandings, currentRoundIdx: 0, history: [], champion: null }));
+      newState = { ...tourney, teams, rounds, rrStandings, currentRoundIdx: 0, history: [], champion: null };
     }
+    setTourney(newState);
+    persistTourney(newState);
     setView('tournament');
   }
 
   function handleScoreChange(matchId: string, team: 'A'|'B', delta: number) {
-    setTourney(s => ({
-      ...s,
-      rounds: s.rounds.map(r => ({
-        ...r,
-        matches: r.matches.map(m => {
-          if (m.id !== matchId || m.completed) return m;
-          return team === 'A'
-            ? { ...m, scoreA: Math.max(0, Math.min(30, m.scoreA + delta)) }
-            : { ...m, scoreB: Math.max(0, Math.min(30, m.scoreB + delta)) };
-        }),
-      })),
-    }));
+    setTourney((s: TournamentState) => {
+      const next: TournamentState = {
+        ...s,
+        rounds: s.rounds.map((r: Round) => ({
+          ...r,
+          matches: r.matches.map((m: Match) => {
+            if (m.id !== matchId || m.completed) return m;
+            return team === 'A'
+              ? { ...m, scoreA: Math.max(0, Math.min(30, m.scoreA + delta)) }
+              : { ...m, scoreB: Math.max(0, Math.min(30, m.scoreB + delta)) };
+          }),
+        })),
+      };
+      persistTourney(next);
+      return next;
+    });
   }
 
   function handleMarkWinner(matchId: string, side: 'A'|'B') {
@@ -1954,6 +1993,7 @@ export default function TournamentApp() {
       const newHistory = [...s.history, { round: roundName, teamA: match.teamA.name, teamB: match.teamB!.name, scoreA: match.scoreA, scoreB: match.scoreB, winner: winner.name }];
       const newState = { ...s, rounds: newRounds, rrStandings: newStandings, history: newHistory };
 
+      persistTourney(newState);
       checkRoundComplete(newState);
       return newState;
     });
@@ -1970,25 +2010,28 @@ export default function TournamentApp() {
           setTourney(s => ({ ...s, champion: winners[0] }));
           setView('champion');
           setConfettiActive(true);
+          clearActiveTourney();           // tournament done — remove from DB
           saveTournament(ns, winners[0]);
           setTimeout(() => setConfettiActive(false), 6500);
         }, 600);
       } else {
         setShowRoundBanner(true);
         setTimeout(() => {
-          setTourney(s => {
+          setTourney((s: TournamentState) => {
             const { rounds: newRounds, newIdx } = advanceElimination(s.rounds, s.currentRoundIdx);
-            return { ...s, rounds: newRounds, currentRoundIdx: newIdx };
+            const next = { ...s, rounds: newRounds, currentRoundIdx: newIdx };
+            persistTourney(next);
+            return next;
           });
           setShowRoundBanner(false);
         }, 1800);
       }
     } else {
       // RR: check all rounds complete
-      if (!ns.rounds.every(r => r.matches.every(m => m.completed))) {
+      if (!ns.rounds.every((r: Round) => r.matches.every((m: Match) => m.completed))) {
         // check if an individual round just finished → show banner
-        const idx = ns.rounds.findIndex(r => r.matches.some(m => !m.completed));
-        if (idx > 0 && ns.rounds[idx - 1].matches.every(m => m.completed)) {
+        const idx = ns.rounds.findIndex((r: Round) => r.matches.some((m: Match) => !m.completed));
+        if (idx > 0 && ns.rounds[idx - 1].matches.every((m: Match) => m.completed)) {
           setShowRoundBanner(true);
           setTimeout(() => setShowRoundBanner(false), 1500);
         }
@@ -1999,6 +2042,7 @@ export default function TournamentApp() {
         setTourney(s => ({ ...s, champion: sorted[0].team }));
         setView('champion');
         setConfettiActive(true);
+        clearActiveTourney();             // tournament done — remove from DB
         saveTournament(ns, sorted[0].team);
         setTimeout(() => setConfettiActive(false), 6500);
       }, 600);
@@ -2046,6 +2090,7 @@ export default function TournamentApp() {
   function resetToSetup() {
     if (!confirm('Start a new tournament? All current data will be lost.')) return;
     resetMatchCounter();
+    clearActiveTourney();
     setTourney(INITIAL_TOURNEY);
     setView('setup');
   }
@@ -2053,6 +2098,7 @@ export default function TournamentApp() {
   function cancelTournament() {
     if (!confirm('Cancel this tournament? All progress will be lost.')) return;
     resetMatchCounter();
+    clearActiveTourney();
     setTourney(INITIAL_TOURNEY);
     setView('roster');
   }
@@ -2067,16 +2113,18 @@ export default function TournamentApp() {
       const newPros  = p.group === 'pro'  ? [...s.pros,      player] : s.pros;
       const newBegs  = p.group === 'beg'  ? [...s.beginners, player] : s.beginners;
       const next = { ...s, pros: newPros, beginners: newBegs };
-      // Rebuild bracket with updated player list
       resetMatchCounter();
       const teams = buildTeams(next);
+      let rebuilt: TournamentState;
       if (s.tourneyFormat === 'elimination') {
         const rounds = buildEliminationRounds(teams);
-        return { ...next, teams, rounds, currentRoundIdx: 0 };
+        rebuilt = { ...next, teams, rounds, currentRoundIdx: 0 };
       } else {
         const { rounds, rrStandings } = buildRoundRobin(teams);
-        return { ...next, teams, rounds, rrStandings, currentRoundIdx: 0 };
+        rebuilt = { ...next, teams, rounds, rrStandings, currentRoundIdx: 0 };
       }
+      persistTourney(rebuilt);
+      return rebuilt;
     });
   }
 
@@ -2088,6 +2136,15 @@ export default function TournamentApp() {
     view === 'champion' ? 'Finished' :
     view === 'setup'    ? 'Setup'    :
     (getCurrentRound(tourney)?.name ?? 'Finished');
+
+  if (appLoading) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', flexDirection: 'column', gap: 16 }}>
+        <span style={{ fontSize: 40 }}>🏸</span>
+        <p style={{ color: 'var(--text2)', fontSize: 15 }}>Resuming tournament…</p>
+      </div>
+    );
+  }
 
   return (
     <>

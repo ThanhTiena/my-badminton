@@ -70,6 +70,81 @@ export interface ImportRow {
 }
 
 /* ─────────────────────────────────────────────────────────────
+   ActiveTournament document  (collection: "active_tournament")
+
+   A singleton collection — at most ONE document exists at a time.
+   Stores the full live TournamentState so the app can resume
+   across page refreshes, device switches, or server restarts.
+
+   Lifecycle:
+     • Created/replaced (upsert) when a tournament is started or
+       any match state changes (score update, winner declared, etc.)
+     • Deleted when the tournament is cancelled or completes.
+───────────────────────────────────────────────────────────── */
+export interface ActiveTournamentDoc {
+  _id?: ObjectId;
+  /** Singleton key — always "current". Used for the upsert filter. */
+  key: 'current';
+  /** ISO timestamp of the last state change */
+  updatedAt: Date;
+  /** The full serialised TournamentState from lib/tournament.ts */
+  state: {
+    pros:            { name: string; group: 'pro' | 'beg' }[];
+    beginners:       { name: string; group: 'pro' | 'beg' }[];
+    gameType:        'singles' | 'doubles';
+    tourneyFormat:   'elimination' | 'roundrobin';
+    currentRoundIdx: number;
+    teams: {
+      id: string;
+      name: string;
+      players: string[];
+      playerObjs: { name: string; group: 'pro' | 'beg' }[];
+    }[];
+    rounds: {
+      name: string;
+      matches: {
+        id: string;
+        teamA: {
+          id: string; name: string;
+          players: string[];
+          playerObjs: { name: string; group: 'pro' | 'beg' }[];
+        };
+        teamB: {
+          id: string; name: string;
+          players: string[];
+          playerObjs: { name: string; group: 'pro' | 'beg' }[];
+        } | null;
+        scoreA: number;
+        scoreB: number;
+        winner: {
+          id: string; name: string;
+          players: string[];
+          playerObjs: { name: string; group: 'pro' | 'beg' }[];
+        } | null;
+        bye: boolean;
+        completed: boolean;
+      }[];
+    }[];
+    history: {
+      round: string;
+      teamA: string; teamB: string;
+      scoreA: number; scoreB: number;
+      winner: string;
+    }[];
+    champion: {
+      id: string; name: string;
+      players: string[];
+      playerObjs: { name: string; group: 'pro' | 'beg' }[];
+    } | null;
+    rrStandings: Record<string, {
+      wins: number; losses: number; pts: number;
+      scoreFor: number; scoreAgainst: number;
+    }>;
+    currentScreen: 'setup' | 'tournament' | 'champion';
+  };
+}
+
+/* ─────────────────────────────────────────────────────────────
    Player document  (collection: "players")
 ───────────────────────────────────────────────────────────── */
 export interface PlayerDoc {
