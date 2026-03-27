@@ -1832,30 +1832,13 @@ function PaymentScreen({ onBack, tournamentPlayers }: { onBack: () => void; tour
               </div>
 
               {summaryMode === 'monthly' ? (
-                <input
-                  type="month"
-                  className="input"
-                  style={{ width: 160 }}
-                  value={summaryRef}
-                  onChange={e => setSummaryRef(e.target.value)}
-                />
+                <input type="month" className="input" style={{ width: 160 }} value={summaryRef} onChange={({ target }: { target: HTMLInputElement }) => setSummaryRef(target.value)} />
               ) : (
-                <input
-                  type="week"
-                  className="input"
-                  style={{ width: 180 }}
-                  value={summaryRef}
-                  onChange={e => setSummaryRef(e.target.value)}
-                />
+                <input type="week" className="input" style={{ width: 180 }} value={summaryRef} onChange={({ target }: { target: HTMLInputElement }) => setSummaryRef(target.value)} />
               )}
 
               <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, cursor: 'pointer', marginLeft: 'auto' }}>
-                <input
-                  type="checkbox"
-                  checked={showRounded}
-                  onChange={e => setShowRounded(e.target.checked)}
-                  style={{ width: 16, height: 16 }}
-                />
+                <input type="checkbox" checked={showRounded} onChange={({ target }: { target: HTMLInputElement }) => setShowRounded(target.checked)} style={{ width: 16, height: 16 }} />
                 Round to 1 000 ₫
               </label>
             </div>
@@ -1865,101 +1848,215 @@ function PaymentScreen({ onBack, tournamentPlayers }: { onBack: () => void; tour
             <EmptyState icon="⏳" text="Loading…" />
           ) : !summary || summary.sessions.length === 0 ? (
             <EmptyState icon="📋" text={`No sessions found for ${summaryRef.replace('W', 'Week ')}.`} />
-          ) : (
-            <>
-              {/* Period total card */}
-              <Card style={{ marginBottom: 16 }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+          ) : (() => {
+            // ── Build pivot data ──────────────────────────────────────────
+            // All unique player names (union across all sessions, sorted)
+            const allNames: string[] = (Array.from(
+              new Set(summary.sessions.flatMap((s: CourtSessionDoc) => s.players.map(p => p.name)))
+            ) as string[]).sort();
+
+            // Group sessions by ISO week
+            const weekMap = new Map<number, CourtSessionDoc[]>();
+            for (const s of summary.sessions as CourtSessionDoc[]) {
+              const w = s.week;
+              if (!weekMap.has(w)) weekMap.set(w, []);
+              weekMap.get(w)!.push(s);
+            }
+            const weeks = Array.from(weekMap.entries()).sort((a, b) => a[0] - b[0]);
+
+            // Helper: get a player's amount for one session (null = not in session)
+            function playerAmt(s: CourtSessionDoc, name: string): { court: number; shuttle: number; total: number } | null {
+              const p = s.players.find(pl => pl.name === name);
+              if (!p) return null;
+              const courtShare = s.courtFee / s.players.length;
+              const shuttleShare = (showRounded ? p.amountOwedRounded : p.amountOwed) - courtShare;
+              const total = showRounded ? p.amountOwedRounded : p.amountOwed;
+              return { court: courtShare, shuttle: shuttleShare, total };
+            }
+
+            // Grand totals per player
+            const grandTotals: Record<string, number> = {};
+            for (const name of allNames) {
+              grandTotals[name] = (summary.sessions as CourtSessionDoc[]).reduce((sum: number, s: CourtSessionDoc) => {
+                const a = playerAmt(s, name);
+                return sum + (a ? a.total : 0);
+              }, 0);
+            }
+            const grandTotal = (summary.sessions as CourtSessionDoc[]).reduce((s: number, sess: CourtSessionDoc) => s + sess.totalCost, 0);
+
+            // Day subtotal (sum of all players' amounts for a session = session totalCost)
+            // Week subtotal per player
+            function weekPlayerTotal(sessions: CourtSessionDoc[], name: string): number {
+              return sessions.reduce((s, sess) => {
+                const a = playerAmt(sess, name);
+                return s + (a ? a.total : 0);
+              }, 0);
+            }
+
+            const cellStyle = {
+              textAlign: 'right' as const, padding: '7px 10px', fontSize: 12,
+              borderBottom: '1px solid var(--border)', borderRight: '1px solid var(--border)',
+              whiteSpace: 'nowrap' as const,
+            };
+            const subStyle = {
+              ...cellStyle, background: 'rgba(57,255,20,.05)', fontWeight: 700, color: 'var(--accent)',
+            };
+            const weekStyle = {
+              ...cellStyle, background: 'rgba(168,85,247,.07)', fontWeight: 700, color: 'var(--accent2)',
+            };
+            const grandStyle = {
+              ...cellStyle, background: 'rgba(57,255,20,.12)', fontWeight: 900, color: 'var(--accent)', fontSize: 13,
+            };
+            const headerStyle = {
+              padding: '8px 10px', fontSize: 11, fontWeight: 700, textTransform: 'uppercase' as const,
+              letterSpacing: '.5px', color: 'var(--text3)', background: 'var(--bg3)',
+              borderBottom: '2px solid var(--border)', borderRight: '1px solid var(--border)',
+              whiteSpace: 'nowrap' as const, textAlign: 'right' as const,
+            };
+            const stickyNameStyle = {
+              position: 'sticky' as const, left: 0, background: 'var(--card)', zIndex: 2,
+              padding: '7px 12px', fontWeight: 600, fontSize: 12,
+              borderBottom: '1px solid var(--border)', borderRight: '2px solid var(--border)',
+              whiteSpace: 'nowrap' as const, minWidth: 110,
+            };
+
+            return (
+              <>
+                {/* Period header */}
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, flexWrap: 'wrap', gap: 8 }}>
                   <div>
-                    <p style={{ fontWeight: 700, fontSize: 17 }}>{summary.period}</p>
-                    <p style={{ fontSize: 13, color: 'var(--text2)', marginTop: 2 }}>{summary.sessions.length} session{summary.sessions.length !== 1 ? 's' : ''}</p>
+                    <p style={{ fontWeight: 800, fontSize: 20 }}>{summary.period}</p>
+                    <p style={{ fontSize: 13, color: 'var(--text2)', marginTop: 2 }}>
+                      {summary.sessions.length} session{summary.sessions.length !== 1 ? 's' : ''} · {allNames.length} players
+                    </p>
                   </div>
                   <div style={{ textAlign: 'right' }}>
-                    <p style={{ fontSize: 12, color: 'var(--text3)' }}>Total cost</p>
-                    <p style={{ fontSize: 22, fontWeight: 900, color: 'var(--accent)' }}>{formatVND(summary.totalCost)}</p>
+                    <p style={{ fontSize: 11, color: 'var(--text3)' }}>Grand total</p>
+                    <p style={{ fontSize: 24, fontWeight: 900, color: 'var(--accent)' }}>{formatVND(grandTotal)}</p>
                   </div>
                 </div>
-              </Card>
 
-              {/* Per-player summary table */}
-              <Card style={{ marginBottom: 20 }}>
-                <CardTitle>👤 Who Owes What</CardTitle>
-                <div style={{ overflowX: 'auto' }}>
-                  <table className="rank-table">
+                {/* Pivot table */}
+                <div style={{ overflowX: 'auto', borderRadius: 12, border: '1px solid var(--border)', background: 'var(--card)' }}>
+                  <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: 600 }}>
                     <thead>
+                      {/* Month header spanning everything */}
                       <tr>
-                        <th>#</th>
-                        <th>Player</th>
-                        <th className="num">Sessions</th>
-                        <th className="num">Amount Owed (VND)</th>
+                        <th style={{ ...headerStyle, textAlign: 'left', fontSize: 13, color: 'var(--text)', background: 'var(--bg3)', position: 'sticky', left: 0, zIndex: 3, minWidth: 110 }}>
+                          {summary.period}
+                        </th>
+                        {weeks.map(([wk, wSessions]) => (
+                          wSessions.map((s: CourtSessionDoc, si: number) => (
+                            <th key={s.sessionDate} style={{ ...headerStyle, textAlign: 'center', minWidth: 90 }}
+                              colSpan={1}>
+                              {si === 0 && (
+                                <span style={{ display: 'block', fontSize: 10, color: 'var(--accent2)', marginBottom: 2 }}>
+                                  Wk {wk}
+                                </span>
+                              )}
+                              <span style={{ display: 'block' }}>{s.sessionDate.slice(5)}</span>
+                              {s.note && <span style={{ display: 'block', fontSize: 9, color: 'var(--text3)', fontWeight: 400, maxWidth: 80, overflow: 'hidden', textOverflow: 'ellipsis' }}>{s.note}</span>}
+                            </th>
+                          ))
+                        ))}
+                        {/* Week subtotal headers */}
+                        {weeks.map(([wk]) => (
+                          <th key={`wkh-${wk}`} style={{ ...headerStyle, color: 'var(--accent2)', minWidth: 90, textAlign: 'center' }}>
+                            Wk {wk} sub
+                          </th>
+                        ))}
+                        <th style={{ ...headerStyle, color: 'var(--accent)', fontSize: 12, minWidth: 100, textAlign: 'center', borderRight: 'none' }}>
+                          Grand Total
+                        </th>
                       </tr>
                     </thead>
+
                     <tbody>
-                      {summary.players.map((p, i) => (
-                        <tr key={p.name}>
-                          <td><span className="rank-num n">{i + 1}</span></td>
-                          <td><strong>{p.name}</strong></td>
-                          <td className="num" style={{ color: 'var(--text2)' }}>{p.sessionCount}</td>
-                          <td className="num">
-                            <span style={{ fontWeight: 800, fontSize: 15, color: 'var(--accent2)' }}>
-                              {formatVND(showRounded ? p.totalOwedRounded : p.totalOwed)}
-                            </span>
+                      {/* ── Player rows ── */}
+                      {allNames.map(name => (
+                        <tr key={name} style={{ transition: 'background .1s' }}>
+                          <td style={stickyNameStyle}>{name}</td>
+
+                          {/* Day cells */}
+                          {weeks.map(([, wSessions]) =>
+                            wSessions.map((s: CourtSessionDoc) => {
+                              const a = playerAmt(s, name);
+                              return (
+                                <td key={s.sessionDate} style={{ ...cellStyle, color: a ? 'var(--text)' : 'var(--text3)' }}
+                                  title={a ? `Court: ${formatVND(a.court)}\nShuttles: ${formatVND(a.shuttle)}\nTotal: ${formatVND(a.total)}` : 'Not in this session'}>
+                                  {a ? formatVND(a.total) : '—'}
+                                </td>
+                              );
+                            })
+                          )}
+
+                          {/* Week subtotals */}
+                          {weeks.map(([wk, wSessions]) => {
+                            const wt = weekPlayerTotal(wSessions, name);
+                            return (
+                              <td key={`wt-${wk}-${name}`} style={weekStyle}>
+                                {wt > 0 ? formatVND(wt) : '—'}
+                              </td>
+                            );
+                          })}
+
+                          {/* Grand total */}
+                          <td style={{ ...grandStyle, borderRight: 'none' }}>
+                            {grandTotals[name] > 0 ? formatVND(grandTotals[name]) : '—'}
                           </td>
                         </tr>
                       ))}
+
+                      {/* ── Day subtotal row ── */}
+                      <tr>
+                        <td style={{ ...stickyNameStyle, fontWeight: 800, color: 'var(--accent)', background: 'rgba(57,255,20,.05)' }}>
+                          Day Total
+                        </td>
+                        {weeks.map(([, wSessions]) =>
+                          wSessions.map((s: CourtSessionDoc) => (
+                            <td key={`dsub-${s.sessionDate}`} style={subStyle}>
+                              {formatVND(s.totalCost)}
+                            </td>
+                          ))
+                        )}
+                        {/* Week cost subtotals */}
+                        {weeks.map(([wk, wSessions]) => {
+                          const wCost = wSessions.reduce((s: number, sess: CourtSessionDoc) => s + sess.totalCost, 0);
+                          return <td key={`wcs-${wk}`} style={weekStyle}>{formatVND(wCost)}</td>;
+                        })}
+                        <td style={{ ...grandStyle, borderRight: 'none' }}>{formatVND(grandTotal)}</td>
+                      </tr>
+
+                      {/* ── Delete row ── */}
+                      <tr>
+                        <td style={{ ...stickyNameStyle, fontSize: 11, color: 'var(--text3)', fontWeight: 400 }}>
+                          Actions
+                        </td>
+                        {weeks.map(([, wSessions]) =>
+                          wSessions.map((s: CourtSessionDoc) => (
+                            <td key={`del-${s.sessionDate}`} style={{ ...cellStyle, textAlign: 'center', padding: '4px 6px' }}>
+                              <button
+                                onClick={() => deleteSession(String(s._id))}
+                                title="Delete session"
+                                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--danger)', fontSize: 14, lineHeight: 1 }}
+                              >🗑</button>
+                            </td>
+                          ))
+                        )}
+                        {weeks.map(([wk]) => <td key={`del-wk-${wk}`} style={cellStyle} />)}
+                        <td style={{ ...cellStyle, borderRight: 'none' }} />
+                      </tr>
                     </tbody>
                   </table>
                 </div>
-              </Card>
 
-              {/* Per-session breakdown */}
-              <CardTitle style={{ marginBottom: 10 }}>📅 Session Breakdown</CardTitle>
-              {summary.sessions.map(s => (
-                <div key={String(s._id)} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r)', marginBottom: 12, overflow: 'hidden' }}>
-                  {/* Session header */}
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 16px', borderBottom: '1px solid var(--border)', flexWrap: 'wrap', gap: 8 }}>
-                    <div>
-                      <span style={{ fontWeight: 700, fontSize: 15 }}>📅 {s.sessionDate}</span>
-                      {s.note && <span style={{ marginLeft: 8, fontSize: 12, color: 'var(--text3)' }}>{s.note}</span>}
-                    </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-                      <span style={{ fontSize: 12, color: 'var(--text3)' }}>
-                        Court: {formatVND(s.courtFee)} · {s.numShuttlecocks} × {formatVND(s.shuttlecockUnitPrice)} shuttles
-                      </span>
-                      <span style={{ fontWeight: 800, color: 'var(--accent)' }}>{formatVND(s.totalCost)}</span>
-                      <button
-                        onClick={() => deleteSession(String(s._id))}
-                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--danger)', fontSize: 16 }}
-                        title="Delete session"
-                      >🗑</button>
-                    </div>
-                  </div>
-
-                  {/* Per-player rows */}
-                  <div style={{ padding: '8px 16px 12px' }}>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 6 }}>
-                      {s.players.map(p => {
-                        const amount = showRounded ? p.amountOwedRounded : p.amountOwed;
-                        return (
-                          <div key={p.name} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'var(--bg3)', borderRadius: 8, padding: '6px 10px', gap: 8 }}>
-                            <div>
-                              <span style={{ fontWeight: 600, fontSize: 13 }}>{p.name}</span>
-                              {p.smashWeight !== 1.0 && (
-                                <span style={{ marginLeft: 5, fontSize: 10, color: 'var(--warn)', fontWeight: 700 }}>⚡{p.smashWeight}×</span>
-                              )}
-                            </div>
-                            <span style={{ fontWeight: 800, color: 'var(--accent2)', fontSize: 13, whiteSpace: 'nowrap' }}>
-                              {formatVND(amount)}
-                            </span>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </>
-          )}
+                {/* Legend */}
+                <p style={{ fontSize: 11, color: 'var(--text3)', marginTop: 10 }}>
+                  💡 Hover any cell to see court + shuttle breakdown. Week subtotals group by ISO week.
+                </p>
+              </>
+            );
+          })()}
         </div>
       )}
 
