@@ -1539,7 +1539,6 @@ function PaymentScreen({ onBack, tournamentPlayers }: { onBack: () => void; tour
   const addUnitNum    = parseFloat(addUnitPrice)  || 0;
   const addShutTotal  = addShutNum * addUnitNum;
   const addTotal      = addCourtNum + addShutTotal;
-  const addPlayers    = tournamentPlayers.filter(n => addSelected[n]);
 
   async function submitAdd() {
     if (!addDate || addCourtNum < 0 || addShutNum < 0 || addUnitNum < 0 || addPlayers.length === 0) return;
@@ -1573,10 +1572,16 @@ function PaymentScreen({ onBack, tournamentPlayers }: { onBack: () => void; tour
     }
   }
 
+  /* ── all DB players for add-session picker ── */
+  const [allDbPlayers, setAllDbPlayers] = useState<string[]>([]);
+  const addPlayers = Array.from(new Set([...tournamentPlayers, ...allDbPlayers])).filter((n: string) => addSelected[n]);
+
   /* ── load known players on mount (for import preview validation) ── */
   useEffect(() => {
     fetch('/api/players').then(r => r.json()).then((data: PlayerDoc[]) => {
       setKnownPlayers(data.map(p => p.name.toLowerCase()));
+      const names = data.map((p: PlayerDoc) => p.name).sort();
+      setAllDbPlayers(names);
     });
   }, []);
 
@@ -1755,26 +1760,69 @@ function PaymentScreen({ onBack, tournamentPlayers }: { onBack: () => void; tour
             <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text2)', display: 'block', marginBottom: 8 }}>
               👥 Players in this session ({addPlayers.length} selected)
             </label>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 16 }}>
-              {tournamentPlayers.map(name => {
-                const on = addSelected[name] ?? true;
-                return (
-                  <button
-                    key={name}
-                    onClick={() => setAddSelected(prev => ({ ...prev, [name]: !prev[name] }))}
-                    style={{
-                      padding: '5px 12px', borderRadius: 20, fontSize: 13, fontWeight: 600, cursor: 'pointer',
-                      border: `2px solid ${on ? 'var(--accent)' : 'var(--border)'}`,
-                      background: on ? 'rgba(57,255,20,.12)' : 'var(--bg3)',
-                      color: on ? 'var(--accent)' : 'var(--text3)',
-                      transition: 'all .15s',
-                    }}
-                  >
-                    {on ? '✓ ' : ''}{name}
-                  </button>
-                );
-              })}
-            </div>
+
+            {/* Section 1: Tournament players */}
+            {tournamentPlayers.length > 0 && (
+              <>
+                <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6 }}>
+                  🏸 Today&apos;s players (tournament)
+                </div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
+                  {tournamentPlayers.map(name => {
+                    const on = addSelected[name] ?? true;
+                    return (
+                      <button
+                        key={name}
+                        onClick={() => setAddSelected((prev: Record<string, boolean>) => ({ ...prev, [name]: !prev[name] }))}
+                        style={{
+                          padding: '5px 12px', borderRadius: 20, fontSize: 13, fontWeight: 600, cursor: 'pointer',
+                          border: `2px solid ${on ? 'var(--accent)' : 'var(--border)'}`,
+                          background: on ? 'rgba(57,255,20,.12)' : 'var(--bg3)',
+                          color: on ? 'var(--accent)' : 'var(--text3)',
+                          transition: 'all .15s',
+                        }}
+                      >
+                        {on ? '✓ ' : ''}{name}
+                      </button>
+                    );
+                  })}
+                </div>
+              </>
+            )}
+
+            {/* Section 2: All other DB players not in tournament */}
+            {(() => {
+              const tournSet = new Set(tournamentPlayers);
+              const extras = allDbPlayers.filter((n: string) => !tournSet.has(n));
+              if (extras.length === 0) return null;
+              return (
+                <>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6 }}>
+                    👤 All players
+                  </div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 16 }}>
+                    {extras.map(name => {
+                      const on = addSelected[name] ?? false;
+                      return (
+                        <button
+                          key={name}
+                          onClick={() => setAddSelected((prev: Record<string, boolean>) => ({ ...prev, [name]: !prev[name] }))}
+                          style={{
+                            padding: '5px 12px', borderRadius: 20, fontSize: 13, fontWeight: 600, cursor: 'pointer',
+                            border: `2px solid ${on ? 'var(--accent2)' : 'var(--border)'}`,
+                            background: on ? 'rgba(168,85,247,.12)' : 'var(--bg3)',
+                            color: on ? 'var(--accent2)' : 'var(--text3)',
+                            transition: 'all .15s',
+                          }}
+                        >
+                          {on ? '✓ ' : ''}{name}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </>
+              );
+            })()}
 
             {/* Per-player preview when all fields filled */}
             {addTotal > 0 && addPlayers.length > 0 && (
