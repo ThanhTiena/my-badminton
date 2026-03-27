@@ -173,6 +173,10 @@ export function resetMatchCounter() {
   matchIdCounter = 0;
 }
 
+export function getNextMatchId(): string {
+  return `m${++matchIdCounter}`;
+}
+
 export function buildTeams(state: TournamentState): Team[] {
   const shuffledPros = shuffleArr([...state.pros]);
   const shuffledBegs = shuffleArr([...state.beginners]);

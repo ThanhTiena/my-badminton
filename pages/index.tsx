@@ -6,7 +6,7 @@ import {
   type GameType, type TourneyFormat, type TournamentState,
   shuffleArr, buildTeams, buildEliminationRounds, advanceElimination,
   buildRoundRobin, getRoundLabelForMatch, findMatch as findMatchInRounds,
-  getRRSorted, getCurrentRound, resetMatchCounter, reshuffleUnstartedMatches,
+  getRRSorted, getCurrentRound, resetMatchCounter, reshuffleUnstartedMatches, getNextMatchId,
 } from '@/lib/tournament';
 import type { PlayerDoc, TournamentHistoryDoc, CourtSessionDoc, PaymentConfigDoc, ImportRow, BetDoc } from '@/lib/models';
 import { parseImportText, formatVND } from '@/lib/payment';
@@ -869,7 +869,7 @@ function StandingsView({ teams, rrStandings, gameType }: { teams: Team[]; rrStan
    side-by-side so multiple courts can run at once.
 ════════════════════════════════════════════════════ */
 function TournamentScreen({
-  state, allPlayers, onScoreChange, onMarkWinner, onReset, onCancel, onAddPlayer, onReshuffle, showRoundBanner,
+  state, allPlayers, onScoreChange, onMarkWinner, onReset, onCancel, onAddPlayer, onReshuffle, onAddManualMatch, showRoundBanner,
 }: {
   state: TournamentState;
   allPlayers: PlayerDoc[];
@@ -879,10 +879,15 @@ function TournamentScreen({
   onCancel: () => void;
   onAddPlayer: (p: PlayerDoc) => void;
   onReshuffle: () => void;
+  onAddManualMatch: (teamA: Team, teamB: Team, roundLabel: string) => void;
   showRoundBanner: boolean;
 }) {
   const [tab, setTab] = useState<'matches'|'bracket'|'history'>('matches');
   const [showAddPlayer, setShowAddPlayer] = useState(false);
+  const [showAddMatch, setShowAddMatch] = useState(false);
+  const [manualTeamA, setManualTeamA] = useState('');
+  const [manualTeamB, setManualTeamB] = useState('');
+  const [manualRound, setManualRound] = useState('');
   const isRR = state.tourneyFormat === 'roundrobin';
   const currentRound = getCurrentRound(state);
 
@@ -945,6 +950,9 @@ function TournamentScreen({
           {canReshuffle && (
             <Btn variant="secondary" size="sm" onClick={onReshuffle}>🔀 Reshuffle</Btn>
           )}
+          <Btn variant="secondary" size="sm" onClick={() => setShowAddMatch((v: boolean) => !v)}>
+            {showAddMatch ? '✕ Close' : '➕ Manual Match'}
+          </Btn>
           <Btn variant="ghost" size="sm" onClick={onReset}>↩️ New</Btn>
           <Btn variant="danger" size="sm" onClick={onCancel}>🚫 Cancel</Btn>
         </div>
@@ -980,6 +988,89 @@ function TournamentScreen({
           </p>
         </Card>
       )}
+
+      {/* Manual match panel */}
+      {showAddMatch && (() => {
+        const teamA = state.teams.find(t => t.id === manualTeamA) ?? null;
+        const teamB = state.teams.find(t => t.id === manualTeamB) ?? null;
+        const canSubmit = teamA && teamB && teamA.id !== teamB.id;
+        const roundName = manualRound.trim() || 'Friendly';
+
+        function submit() {
+          if (!canSubmit) return;
+          onAddManualMatch(teamA!, teamB!, roundName);
+          setManualTeamA('');
+          setManualTeamB('');
+          setManualRound('');
+          setShowAddMatch(false);
+          setTab('matches');
+        }
+
+        return (
+          <Card style={{ marginBottom: 16 }}>
+            <CardTitle>➕ Add Manual Match</CardTitle>
+            <p style={{ fontSize: 12, color: 'var(--text3)', marginBottom: 14 }}>
+              Create a one-off match between any two teams. It will appear as a live match immediately.
+            </p>
+
+            {/* Team A picker */}
+            <p style={{ fontSize: 12, fontWeight: 700, color: 'var(--text2)', marginBottom: 6 }}>Team A</p>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 14 }}>
+              {state.teams.map(t => (
+                <button
+                  key={t.id}
+                  onClick={() => setManualTeamA(t.id === manualTeamA ? '' : t.id)}
+                  style={{
+                    padding: '5px 12px', borderRadius: 16, fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                    border: `2px solid ${manualTeamA === t.id ? 'var(--accent)' : 'var(--border)'}`,
+                    background: manualTeamA === t.id ? 'rgba(57,255,20,.12)' : 'var(--bg3)',
+                    color: manualTeamA === t.id ? 'var(--accent)' : 'var(--text2)',
+                  }}
+                >{t.name}</button>
+              ))}
+            </div>
+
+            {/* Team B picker */}
+            <p style={{ fontSize: 12, fontWeight: 700, color: 'var(--text2)', marginBottom: 6 }}>Team B</p>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 14 }}>
+              {state.teams.filter(t => t.id !== manualTeamA).map(t => (
+                <button
+                  key={t.id}
+                  onClick={() => setManualTeamB(t.id === manualTeamB ? '' : t.id)}
+                  style={{
+                    padding: '5px 12px', borderRadius: 16, fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                    border: `2px solid ${manualTeamB === t.id ? 'var(--accent2)' : 'var(--border)'}`,
+                    background: manualTeamB === t.id ? 'rgba(168,85,247,.12)' : 'var(--bg3)',
+                    color: manualTeamB === t.id ? 'var(--accent2)' : 'var(--text2)',
+                  }}
+                >{t.name}</button>
+              ))}
+            </div>
+
+            {/* Round label */}
+            <p style={{ fontSize: 12, fontWeight: 700, color: 'var(--text2)', marginBottom: 6 }}>Round label <span style={{ fontWeight: 400, color: 'var(--text3)' }}>(optional, defaults to "Friendly")</span></p>
+            <input
+              className="input"
+              placeholder="e.g. Friendly, Practice, Court 3…"
+              value={manualRound}
+              style={{ marginBottom: 14 }}
+              onChange={({ target }: { target: HTMLInputElement }) => setManualRound(target.value)}
+              onKeyDown={({ key }: { key: string }) => key === 'Enter' && submit()}
+            />
+
+            {canSubmit && (
+              <div style={{ fontSize: 13, color: 'var(--text2)', marginBottom: 12, padding: '8px 12px', background: 'var(--bg3)', borderRadius: 8 }}>
+                <span style={{ color: 'var(--accent)', fontWeight: 700 }}>{teamA!.name}</span>
+                <span style={{ margin: '0 8px', color: 'var(--text3)' }}>vs</span>
+                <span style={{ color: 'var(--accent2)', fontWeight: 700 }}>{teamB!.name}</span>
+                <span style={{ marginLeft: 8, color: 'var(--text3)' }}>· {roundName}</span>
+              </div>
+            )}
+
+            <Btn variant="primary" disabled={!canSubmit} onClick={submit}>⚡ Start Match</Btn>
+          </Card>
+        );
+      })()}
 
       {/* Tabs */}
       <div className="tabs">
@@ -2440,6 +2531,30 @@ export default function TournamentApp() {
     });
   }
 
+  function handleAddManualMatch(teamA: Team, teamB: Team, roundLabel: string) {
+    setTourney((s: TournamentState) => {
+      const match: Match = {
+        id: getNextMatchId(),
+        teamA, teamB,
+        scoreA: 0, scoreB: 0,
+        winner: null, bye: false, completed: false,
+      };
+      // Find an existing round with that name, or append a new one
+      const existingIdx = s.rounds.findIndex(r => r.name === roundLabel);
+      let newRounds: Round[];
+      if (existingIdx >= 0) {
+        newRounds = s.rounds.map((r, i) =>
+          i === existingIdx ? { ...r, matches: [...r.matches, match] } : r
+        );
+      } else {
+        newRounds = [...s.rounds, { name: roundLabel, matches: [match] }];
+      }
+      const next = { ...s, rounds: newRounds };
+      persistTourney(next);
+      return next;
+    });
+  }
+
   const headerBadge =
     view === 'roster'   ? 'Roster'   :
     view === 'history'  ? 'History'  :
@@ -2501,6 +2616,7 @@ export default function TournamentApp() {
             onCancel={cancelTournament}
             onAddPlayer={addPlayerToTournament}
             onReshuffle={handleReshuffle}
+            onAddManualMatch={handleAddManualMatch}
             showRoundBanner={showRoundBanner}
           />
         )}
