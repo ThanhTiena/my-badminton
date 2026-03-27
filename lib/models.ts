@@ -70,6 +70,34 @@ export interface ImportRow {
 }
 
 /* ─────────────────────────────────────────────────────────────
+   Bet document  (collection: "bets")
+
+   One document per bet placed on a match.
+   A match can have many bets from many bettors.
+───────────────────────────────────────────────────────────── */
+export interface BetDoc {
+  _id?: ObjectId;
+  /** The match ID from TournamentState (e.g. "m3") */
+  matchId: string;
+  /** Human label shown in history, e.g. "Semi-Finals" */
+  roundLabel: string;
+  /** "Alice & Bob vs Charlie & Dave" — snapshot so history stays readable */
+  matchLabel: string;
+  /** Name of the person placing the bet */
+  bettor: string;
+  /** Which team they're betting on — the team name */
+  pick: string;
+  /** Free-text note: amount, terms, anything they want */
+  note: string;
+  /** Set once the match completes */
+  outcome?: 'won' | 'lost';
+  /** The actual winner team name — filled in when match completes */
+  actualWinner?: string;
+  createdAt: Date;
+  settledAt?: Date;
+}
+
+/* ─────────────────────────────────────────────────────────────
    ActiveTournament document  (collection: "active_tournament")
 
    A singleton collection — at most ONE document exists at a time.

@@ -6,12 +6,12 @@ import {
   type GameType, type TourneyFormat, type TournamentState,
   shuffleArr, buildTeams, buildEliminationRounds, advanceElimination,
   buildRoundRobin, getRoundLabelForMatch, findMatch as findMatchInRounds,
-  getRRSorted, getCurrentRound, resetMatchCounter,
+  getRRSorted, getCurrentRound, resetMatchCounter, reshuffleUnstartedMatches,
 } from '@/lib/tournament';
-import type { PlayerDoc, TournamentHistoryDoc, CourtSessionDoc, PaymentConfigDoc, ImportRow } from '@/lib/models';
+import type { PlayerDoc, TournamentHistoryDoc, CourtSessionDoc, PaymentConfigDoc, ImportRow, BetDoc } from '@/lib/models';
 import { parseImportText, formatVND } from '@/lib/payment';
 
-type AppView = 'roster' | 'setup' | 'tournament' | 'champion' | 'history' | 'rankings' | 'payment';
+type AppView = 'roster' | 'setup' | 'tournament' | 'champion' | 'history' | 'rankings' | 'payment' | 'bets';
 
 const INITIAL_TOURNEY: TournamentState = {
   pros: [], beginners: [], teams: [],
@@ -111,6 +111,8 @@ function RosterScreen({ onDone }: { onDone: () => void }) {
   const [err, setErr] = useState('');
   const [group, setGroup] = useState<'pro' | 'beg'>('pro');
   const nameRef = useRef<HTMLInputElement>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editName, setEditName] = useState('');
 
   const fetch$ = useCallback(async () => {
     const r = await fetch('/api/players');
@@ -149,6 +151,17 @@ function RosterScreen({ onDone }: { onDone: () => void }) {
       body: JSON.stringify({ group: next }),
     });
     setPlayers(p => p.map(x => String(x._id) === id ? { ...x, group: next } : x));
+  }
+
+  async function rename(id: string) {
+    const trimmed = editName.trim();
+    if (!trimmed) { setEditingId(null); return; }
+    await fetch(`/api/players/${id}`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: trimmed }),
+    });
+    setPlayers(p => p.map(x => String(x._id) === id ? { ...x, name: trimmed } : x));
+    setEditingId(null);
   }
 
   const pros = players.filter(p => p.group === 'pro');
@@ -218,25 +231,50 @@ function RosterScreen({ onDone }: { onDone: () => void }) {
             ? <EmptyState icon="👥" text="No players yet — add some above!" />
             : (
               <div className="player-grid">
-                {players.map(p => (
-                  <div key={String(p._id)} className="player-card anim-slide">
-                    <Badge group={p.group} />
-                    <div className="info">
-                      <div className="name">{p.name}</div>
-                      <div className="stats">🏆 {p.stats.titles} title{p.stats.titles !== 1 ? 's' : ''} · {p.stats.wins}W {p.stats.losses}L</div>
+                {players.map(p => {
+                  const id = String(p._id);
+                  const isEditing = editingId === id;
+                  return (
+                    <div key={id} className="player-card anim-slide">
+                      <Badge group={p.group} />
+                      <div className="info">
+                        {isEditing ? (
+                          <input
+                            className="input"
+                            autoFocus
+                            value={editName}
+                            maxLength={30}
+                            style={{ padding: '4px 8px', fontSize: 13, marginBottom: 0 }}
+                            onChange={({ target }: { target: HTMLInputElement }) => setEditName(target.value)}
+                            onKeyDown={({ key }: { key: string }) => {
+                              if (key === 'Enter') rename(id);
+                              if (key === 'Escape') setEditingId(null);
+                            }}
+                            onBlur={() => rename(id)}
+                          />
+                        ) : (
+                          <div className="name">{p.name}</div>
+                        )}
+                        <div className="stats">🏆 {p.stats.titles} title{p.stats.titles !== 1 ? 's' : ''} · {p.stats.wins}W {p.stats.losses}L</div>
+                      </div>
+                      <div className="actions">
+                        <button
+                          className="group-toggle-btn"
+                          title="Edit name"
+                          onClick={() => { setEditingId(id); setEditName(p.name); }}
+                        >✏️</button>
+                        <button
+                          className="group-toggle-btn"
+                          title="Switch Pro ↔ Beg"
+                          onClick={() => toggleGroup(id, p.group)}
+                        >
+                          {p.group === 'pro' ? '→🌱' : '→🥇'}
+                        </button>
+                        <Btn variant="danger" size="sm" onClick={() => del(id)}>✕</Btn>
+                      </div>
                     </div>
-                    <div className="actions">
-                      <button
-                        className="group-toggle-btn"
-                        title="Switch Pro ↔ Beg"
-                        onClick={() => toggleGroup(String(p._id), p.group)}
-                      >
-                        {p.group === 'pro' ? '→🌱' : '→🥇'}
-                      </button>
-                      <Btn variant="danger" size="sm" onClick={() => del(String(p._id))}>✕</Btn>
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )
         }
@@ -404,6 +442,150 @@ function SetupScreen({
 }
 
 /* ════════════════════════════════════════════════════
+   BET PANEL  — place & view bets on a live match
+════════════════════════════════════════════════════ */
+function BetPanel({ matchId, roundLabel, matchLabel, teamA, teamB }: {
+  matchId: string;
+  roundLabel: string;
+  matchLabel: string;
+  teamA: string;
+  teamB: string;
+}) {
+  const [bets,     setBets]     = useState<BetDoc[]>([]);
+  const [loading,  setLoading]  = useState(true);
+  const [bettor,   setBettor]   = useState('');
+  const [pick,     setPick]     = useState<string>(teamA);
+  const [note,     setNote]     = useState('');
+  const [saving,   setSaving]   = useState(false);
+  const [open,     setOpen]     = useState(false);
+
+  // Load existing bets for this match when panel opens
+  useEffect(() => {
+    if (!open) return;
+    setLoading(true);
+    fetch(`/api/bets?matchId=${encodeURIComponent(matchId)}`)
+      .then(r => r.json())
+      .then((data: BetDoc[]) => { setBets(data); setLoading(false); });
+  }, [open, matchId]);
+
+  async function placeBet() {
+    if (!bettor.trim() || !pick) return;
+    setSaving(true);
+    const res = await fetch('/api/bets', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ matchId, roundLabel, matchLabel, bettor: bettor.trim(), pick, note }),
+    });
+    const saved = await res.json();
+    setBets((prev: BetDoc[]) => [saved, ...prev]);
+    setBettor('');
+    setNote('');
+    setSaving(false);
+  }
+
+  const betCount = bets.length;
+
+  return (
+    <div style={{ borderTop: '1px solid var(--border)', marginTop: 12 }}>
+      {/* Toggle button */}
+      <button
+        onClick={() => setOpen((v: boolean) => !v)}
+        style={{
+          width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          background: 'none', border: 'none', cursor: 'pointer', padding: '8px 0',
+          color: 'var(--text2)', fontFamily: 'inherit',
+        }}
+      >
+        <span style={{ fontSize: 13, fontWeight: 700 }}>
+          🎲 Bets{betCount > 0 ? ` (${betCount})` : ''}
+        </span>
+        <span style={{ fontSize: 12, color: 'var(--text3)' }}>{open ? '▲ hide' : '▼ show'}</span>
+      </button>
+
+      {open && (
+        <div style={{ paddingBottom: 10 }}>
+          {/* Place a bet form */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 12 }}>
+            <div style={{ display: 'flex', gap: 6 }}>
+              <input
+                className="input"
+                style={{ flex: 1 }}
+                placeholder="Your name"
+                value={bettor}
+                onChange={e => setBettor(e.target.value)}
+              />
+            </div>
+
+            {/* Pick team */}
+            <div style={{ display: 'flex', gap: 6 }}>
+              {[teamA, teamB].map(t => (
+                <button
+                  key={t}
+                  onClick={() => setPick(t)}
+                  style={{
+                    flex: 1, padding: '6px 8px', borderRadius: 8, fontSize: 12, fontWeight: 700,
+                    cursor: 'pointer', transition: 'all .15s',
+                    border: `2px solid ${pick === t ? 'var(--accent)' : 'var(--border)'}`,
+                    background: pick === t ? 'rgba(57,255,20,.12)' : 'var(--bg3)',
+                    color: pick === t ? 'var(--accent)' : 'var(--text2)',
+                    wordBreak: 'break-word',
+                  }}
+                >
+                  {pick === t ? '✓ ' : ''}{t}
+                </button>
+              ))}
+            </div>
+
+            {/* Note / stake */}
+            <input
+              className="input"
+              placeholder="Note / stake (e.g. 20k, buy drinks)"
+              value={note}
+              onChange={({ target }: { target: HTMLInputElement }) => setNote(target.value)}
+              onKeyDown={({ key }: { key: string }) => key === 'Enter' && placeBet()}
+            />
+
+            <Btn variant="secondary" size="sm" disabled={saving || !bettor.trim()} onClick={placeBet}>
+              {saving ? '⏳' : '🎲 Place Bet'}
+            </Btn>
+          </div>
+
+          {/* Existing bets */}
+          {loading ? (
+            <p style={{ fontSize: 12, color: 'var(--text3)' }}>Loading…</p>
+          ) : bets.length === 0 ? (
+            <p style={{ fontSize: 12, color: 'var(--text3)' }}>No bets yet. Be the first!</p>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+              {bets.map(b => (
+                <div key={String(b._id)} style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                  background: b.outcome === 'won' ? 'rgba(57,255,20,.08)' : b.outcome === 'lost' ? 'rgba(239,68,68,.08)' : 'var(--bg3)',
+                  border: `1px solid ${b.outcome === 'won' ? 'var(--success)' : b.outcome === 'lost' ? 'var(--danger)' : 'var(--border)'}`,
+                  borderRadius: 8, padding: '6px 10px', gap: 8, flexWrap: 'wrap',
+                }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <span style={{ fontWeight: 700, fontSize: 13 }}>{b.bettor}</span>
+                    <span style={{ color: 'var(--text3)', fontSize: 12 }}> → </span>
+                    <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--accent2)' }}>{b.pick}</span>
+                    {b.note && <span style={{ fontSize: 11, color: 'var(--text3)', marginLeft: 6 }}>· {b.note}</span>}
+                  </div>
+                  <span style={{ fontSize: 12, fontWeight: 700, flexShrink: 0,
+                    color: b.outcome === 'won' ? 'var(--success)' : b.outcome === 'lost' ? 'var(--danger)' : 'var(--text3)'
+                  }}>
+                    {b.outcome === 'won' ? '🏆 Won' : b.outcome === 'lost' ? '💸 Lost' : '⏳ Open'}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ════════════════════════════════════════════════════
    BADMINTON SCORE HELPERS
 ════════════════════════════════════════════════════ */
 function getBadmintonStatus(a: number, b: number): { canWinA: boolean; canWinB: boolean; isDeuce: boolean; isGamePt: boolean } {
@@ -473,6 +655,13 @@ function MatchCard({
           <p className="completed-winner">🏆 <TruncName name={match.winner!.name} maxWidth={180} /> wins</p>
           <p className="completed-score">{match.scoreA} — {match.scoreB}</p>
         </div>
+        <BetPanel
+          matchId={match.id}
+          roundLabel={roundLabel}
+          matchLabel={`${nameA} vs ${nameB}`}
+          teamA={nameA}
+          teamB={nameB}
+        />
       </div>
     );
   }
@@ -590,6 +779,14 @@ function MatchCard({
           </div>
         )}
       </div>
+
+      <BetPanel
+        matchId={match.id}
+        roundLabel={roundLabel}
+        matchLabel={`${nameA} vs ${nameB}`}
+        teamA={nameA}
+        teamB={nameB}
+      />
     </div>
   );
 }
@@ -672,7 +869,7 @@ function StandingsView({ teams, rrStandings, gameType }: { teams: Team[]; rrStan
    side-by-side so multiple courts can run at once.
 ════════════════════════════════════════════════════ */
 function TournamentScreen({
-  state, allPlayers, onScoreChange, onMarkWinner, onReset, onCancel, onAddPlayer, showRoundBanner,
+  state, allPlayers, onScoreChange, onMarkWinner, onReset, onCancel, onAddPlayer, onReshuffle, showRoundBanner,
 }: {
   state: TournamentState;
   allPlayers: PlayerDoc[];
@@ -681,6 +878,7 @@ function TournamentScreen({
   onReset: () => void;
   onCancel: () => void;
   onAddPlayer: (p: PlayerDoc) => void;
+  onReshuffle: () => void;
   showRoundBanner: boolean;
 }) {
   const [tab, setTab] = useState<'matches'|'bracket'|'history'>('matches');
@@ -705,6 +903,11 @@ function TournamentScreen({
   const activeRounds: Round[] = isRR
     ? state.rounds.filter(r => r.matches.some(m => !m.completed))
     : (currentRound ? [currentRound] : []);
+
+  // Can reshuffle when there are at least 2 unstarted matches in active rounds
+  const unstartedCount = activeRounds.reduce((a, r) =>
+    a + r.matches.filter(m => !m.completed && m.scoreA === 0 && m.scoreB === 0 && !m.bye).length, 0);
+  const canReshuffle = unstartedCount >= 2;
 
   // Completed rounds in this session (for reference, shown collapsed)
   const completedRounds: Round[] = isRR
@@ -738,6 +941,9 @@ function TournamentScreen({
             <Btn variant="secondary" size="sm" onClick={() => setShowAddPlayer((v: boolean) => !v)}>
               {showAddPlayer ? '✕ Close' : '➕ Add Player'}
             </Btn>
+          )}
+          {canReshuffle && (
+            <Btn variant="secondary" size="sm" onClick={onReshuffle}>🔀 Reshuffle</Btn>
           )}
           <Btn variant="ghost" size="sm" onClick={onReset}>↩️ New</Btn>
           <Btn variant="danger" size="sm" onClick={onCancel}>🚫 Cancel</Btn>
@@ -1857,6 +2063,96 @@ function PaymentScreen({ onBack, tournamentPlayers }: { onBack: () => void; tour
 }
 
 /* ════════════════════════════════════════════════════
+   BET HISTORY SCREEN
+════════════════════════════════════════════════════ */
+function BetHistoryScreen({ onBack }: { onBack: () => void }) {
+  const [bets, setBets] = useState<BetDoc[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetch('/api/bets')
+      .then(r => r.json())
+      .then((data: BetDoc[]) => { setBets(data); setLoading(false); });
+  }, []);
+
+  const open   = bets.filter((b: BetDoc) => !b.outcome);
+  const won    = bets.filter((b: BetDoc) => b.outcome === 'won');
+  const lost   = bets.filter((b: BetDoc) => b.outcome === 'lost');
+
+  return (
+    <div className="anim-fade">
+      <button className="back-btn" onClick={onBack}>← Back</button>
+      <p className="page-title">🎲 Bet History</p>
+      <p className="page-sub">All bets placed across every match.</p>
+
+      {loading ? (
+        <EmptyState icon="⏳" text="Loading bets…" />
+      ) : bets.length === 0 ? (
+        <EmptyState icon="🎲" text="No bets placed yet." />
+      ) : (
+        <>
+          {/* Summary */}
+          <div className="two-col" style={{ marginBottom: 20 }}>
+            <Card>
+              <CardTitle>📊 Summary</CardTitle>
+              {[
+                ['Total Bets', bets.length, undefined],
+                ['⏳ Open',    open.length,  'var(--text2)'],
+                ['🏆 Won',     won.length,   'var(--success)'],
+                ['💸 Lost',    lost.length,  'var(--danger)'],
+              ].map(([label, val, color]) => (
+                <div className="summary-row" key={String(label)}>
+                  <span className="summary-label">{label}</span>
+                  <span className="summary-value" style={color ? { color: color as string } : {}}>{String(val)}</span>
+                </div>
+              ))}
+            </Card>
+          </div>
+
+          {/* Full list */}
+          <Card>
+            <CardTitle>🎲 All Bets</CardTitle>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {bets.map((b: BetDoc) => (
+                <div key={String(b._id)} style={{
+                  background: b.outcome === 'won' ? 'rgba(57,255,20,.07)' : b.outcome === 'lost' ? 'rgba(239,68,68,.07)' : 'var(--bg3)',
+                  border: `1px solid ${b.outcome === 'won' ? 'var(--success)' : b.outcome === 'lost' ? 'var(--danger)' : 'var(--border)'}`,
+                  borderRadius: 10, padding: '10px 14px',
+                  display: 'flex', gap: 10, alignItems: 'flex-start', flexWrap: 'wrap',
+                }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 13, fontWeight: 700 }}>{b.bettor}</div>
+                    <div style={{ fontSize: 12, color: 'var(--text2)', marginTop: 2 }}>
+                      <span style={{ color: 'var(--text3)' }}>{b.roundLabel} · </span>
+                      {b.matchLabel}
+                    </div>
+                    <div style={{ fontSize: 12, marginTop: 3 }}>
+                      Bet on: <span style={{ fontWeight: 600, color: 'var(--accent2)' }}>{b.pick}</span>
+                      {b.note && <span style={{ color: 'var(--text3)', marginLeft: 8 }}>· {b.note}</span>}
+                    </div>
+                    {b.outcome && (
+                      <div style={{ fontSize: 12, color: 'var(--text3)', marginTop: 2 }}>
+                        Actual winner: <span style={{ fontWeight: 600 }}>{b.actualWinner}</span>
+                      </div>
+                    )}
+                  </div>
+                  <span style={{
+                    fontSize: 13, fontWeight: 700, flexShrink: 0,
+                    color: b.outcome === 'won' ? 'var(--success)' : b.outcome === 'lost' ? 'var(--danger)' : 'var(--text3)',
+                  }}>
+                    {b.outcome === 'won' ? '🏆 Won' : b.outcome === 'lost' ? '💸 Lost' : '⏳ Open'}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </Card>
+        </>
+      )}
+    </div>
+  );
+}
+
+/* ════════════════════════════════════════════════════
    ROOT APP
 ════════════════════════════════════════════════════ */
 export default function TournamentApp() {
@@ -1993,6 +2289,13 @@ export default function TournamentApp() {
       const newHistory = [...s.history, { round: roundName, teamA: match.teamA.name, teamB: match.teamB!.name, scoreA: match.scoreA, scoreB: match.scoreB, winner: winner.name }];
       const newState = { ...s, rounds: newRounds, rrStandings: newStandings, history: newHistory };
 
+      // Settle bets for this match
+      fetch('/api/bets/settle', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ matchId, winner: winner.name }),
+      }).catch(() => {/* best-effort */});
+
       persistTourney(newState);
       checkRoundComplete(newState);
       return newState;
@@ -2128,11 +2431,21 @@ export default function TournamentApp() {
     });
   }
 
+  function handleReshuffle() {
+    setTourney((s: TournamentState) => {
+      const newRounds = reshuffleUnstartedMatches(s.rounds);
+      const next = { ...s, rounds: newRounds };
+      persistTourney(next);
+      return next;
+    });
+  }
+
   const headerBadge =
     view === 'roster'   ? 'Roster'   :
     view === 'history'  ? 'History'  :
     view === 'rankings' ? 'Rankings' :
     view === 'payment'  ? 'Payment'  :
+    view === 'bets'     ? 'Bets'     :
     view === 'champion' ? 'Finished' :
     view === 'setup'    ? 'Setup'    :
     (getCurrentRound(tourney)?.name ?? 'Finished');
@@ -2153,6 +2466,7 @@ export default function TournamentApp() {
       <header className="app-header">
         <div className="logo">🏸 <span>Smash</span>Tour</div>
         <div className="header-right">
+          <button className="nav-link" onClick={() => setView('bets')}>🎲 Bets</button>
           <button className="nav-link" onClick={() => setView('payment')}>💰 Payment</button>
           <button className="nav-link" onClick={() => setView('rankings')}>🏅 Rankings</button>
           {view !== 'roster' && view !== 'setup' && (
@@ -2186,6 +2500,7 @@ export default function TournamentApp() {
             onReset={resetToSetup}
             onCancel={cancelTournament}
             onAddPlayer={addPlayerToTournament}
+            onReshuffle={handleReshuffle}
             showRoundBanner={showRoundBanner}
           />
         )}
@@ -2199,6 +2514,9 @@ export default function TournamentApp() {
         )}
         {view === 'history' && (
           <HistoryScreen onBack={() => setView(tourney.rounds.length > 0 ? (tourney.champion ? 'champion' : 'tournament') : 'roster')} />
+        )}
+        {view === 'bets' && (
+          <BetHistoryScreen onBack={() => setView(tourney.rounds.length > 0 ? (tourney.champion ? 'champion' : 'tournament') : 'roster')} />
         )}
         {view === 'rankings' && (
           <RankingsScreen onBack={() => setView(tourney.rounds.length > 0 ? (tourney.champion ? 'champion' : 'tournament') : 'roster')} />

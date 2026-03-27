@@ -15,12 +15,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const _id = new ObjectId(id);
 
   if (req.method === 'PATCH') {
-    const { group } = req.body as { group?: 'pro' | 'beg' };
+    const { group, name } = req.body as { group?: 'pro' | 'beg'; name?: string };
     if (group && !['pro', 'beg'].includes(group)) {
       return res.status(400).json({ error: 'Invalid group' });
     }
     const update: Partial<PlayerDoc> = {};
     if (group) update.group = group;
+    if (name?.trim()) update.name = name.trim();
     await col.updateOne({ _id }, { $set: update });
     return res.status(200).json({ ok: true });
   }

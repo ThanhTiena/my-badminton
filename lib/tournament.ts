@@ -81,6 +81,7 @@ export function makeBalancedDoubleTeams(pros: Player[], beginners: Player[]): Pl
   const begsQ = [...beginners];
   const teams: Player[][] = [];
 
+  // Pair pros with beginners first for balance
   while (prosQ.length > 0 && begsQ.length > 0) {
     teams.push([prosQ.pop()!, begsQ.pop()!]);
   }
@@ -89,10 +90,70 @@ export function makeBalancedDoubleTeams(pros: Player[], beginners: Player[]): Pl
   while (remaining.length >= 2) {
     teams.push([remaining.pop()!, remaining.pop()!]);
   }
+
+  // If one player is left over (odd total), rotate them into existing teams
+  // so every match has 2v2. The odd player joins whichever team currently has 1.
+  // If all teams already have 2, the last player joins the first team (3v2 avoided
+  // by the caller ensuring at least 4 players — this is just a safety net).
   if (remaining.length === 1) {
-    teams.push([remaining[0]]);
+    const odd = remaining[0];
+    // Find a team with only 1 player (shouldn't happen if total >= 4, but guard anyway)
+    const solo = teams.find(t => t.length === 1);
+    if (solo) {
+      solo.push(odd);
+    } else {
+      // All teams are pairs — append as a 3rd member of first team rather than
+      // creating a singleton, so we never generate a 1-player team.
+      // Caller (buildTeams) should prevent this via minimum player validation.
+      teams[0].push(odd);
+    }
   }
   return teams;
+}
+
+/**
+ * Reshuffle only the unstarted matches within the active rounds.
+ * Completed matches stay exactly as-is.
+ * Teams are re-paired randomly among the teams whose matches haven't started.
+ */
+export function reshuffleUnstartedMatches(rounds: Round[]): Round[] {
+  return rounds.map(round => {
+    const started   = round.matches.filter(m => m.completed || m.scoreA > 0 || m.scoreB > 0);
+    const unstarted = round.matches.filter(m => !m.completed && m.scoreA === 0 && m.scoreB === 0 && !m.bye);
+
+    if (unstarted.length < 2) return round; // nothing to shuffle
+
+    // Collect all teams from unstarted matches and re-pair them randomly
+    const teams: Team[] = [];
+    for (const m of unstarted) {
+      teams.push(m.teamA);
+      if (m.teamB) teams.push(m.teamB);
+    }
+    const shuffled = shuffleArr(teams);
+
+    const newUnstarted: Match[] = [];
+    for (let i = 0; i < shuffled.length - 1; i += 2) {
+      newUnstarted.push({
+        ...unstarted[Math.floor(i / 2)],   // keep same match id slot
+        teamA: shuffled[i],
+        teamB: shuffled[i + 1],
+        scoreA: 0, scoreB: 0,
+        winner: null, completed: false,
+      });
+    }
+    // If odd teams (shouldn't happen in normal flow), append leftover as bye
+    if (shuffled.length % 2 !== 0) {
+      const leftover = shuffled[shuffled.length - 1];
+      newUnstarted.push({
+        id: `m${++matchIdCounter}`,
+        teamA: leftover, teamB: null,
+        scoreA: 0, scoreB: 0,
+        winner: leftover, bye: true, completed: true,
+      });
+    }
+
+    return { ...round, matches: [...started, ...newUnstarted] };
+  });
 }
 
 export function interleaveGroups(pros: Player[], beginners: Player[]): Player[] {
