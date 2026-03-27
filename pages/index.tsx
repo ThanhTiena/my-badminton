@@ -672,21 +672,33 @@ function StandingsView({ teams, rrStandings, gameType }: { teams: Team[]; rrStan
    side-by-side so multiple courts can run at once.
 ════════════════════════════════════════════════════ */
 function TournamentScreen({
-  state, onScoreChange, onMarkWinner, onReset, showRoundBanner,
+  state, allPlayers, onScoreChange, onMarkWinner, onReset, onCancel, onAddPlayer, showRoundBanner,
 }: {
   state: TournamentState;
+  allPlayers: PlayerDoc[];
   onScoreChange: (id: string, t: 'A'|'B', d: number) => void;
   onMarkWinner: (id: string, s: 'A'|'B') => void;
   onReset: () => void;
+  onCancel: () => void;
+  onAddPlayer: (p: PlayerDoc) => void;
   showRoundBanner: boolean;
 }) {
   const [tab, setTab] = useState<'matches'|'bracket'|'history'>('matches');
+  const [showAddPlayer, setShowAddPlayer] = useState(false);
   const isRR = state.tourneyFormat === 'roundrobin';
   const currentRound = getCurrentRound(state);
 
   const totalM = state.rounds.reduce((a, r) => a + r.matches.filter(m => !m.bye).length, 0);
   const doneM  = state.rounds.reduce((a, r) => a + r.matches.filter(m => m.completed && !m.bye).length, 0);
   const progress = totalM ? Math.round((doneM / totalM) * 100) : 0;
+
+  // Can only add players when no matches have been played yet
+  const canAddPlayer = doneM === 0;
+
+  // Players already in the tournament
+  const inTournament = new Set([...state.pros, ...state.beginners].map(p => p.name));
+  // Players from roster not yet in tournament
+  const addablePlayers = allPlayers.filter(p => !inTournament.has(p.name));
 
   // For RR: show all rounds that have at least one incomplete match
   // For Elimination: show current round
@@ -722,9 +734,46 @@ function TournamentScreen({
           <div className="progress-track">
             <div className="progress-fill" style={{ width: `${progress}%` }} />
           </div>
+          {canAddPlayer && (
+            <Btn variant="secondary" size="sm" onClick={() => setShowAddPlayer((v: boolean) => !v)}>
+              {showAddPlayer ? '✕ Close' : '➕ Add Player'}
+            </Btn>
+          )}
           <Btn variant="ghost" size="sm" onClick={onReset}>↩️ New</Btn>
+          <Btn variant="danger" size="sm" onClick={onCancel}>🚫 Cancel</Btn>
         </div>
       </div>
+
+      {/* Add-player panel — only when no matches played yet */}
+      {showAddPlayer && canAddPlayer && (
+        <Card style={{ marginBottom: 16 }}>
+          <CardTitle>➕ Add Player to Tournament</CardTitle>
+          {addablePlayers.length === 0 ? (
+            <p style={{ fontSize: 13, color: 'var(--text3)' }}>All roster players are already in this tournament.</p>
+          ) : (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+              {addablePlayers.map(p => (
+                <button
+                  key={p.name}
+                  onClick={() => { onAddPlayer(p); setShowAddPlayer(false); }}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 6,
+                    padding: '6px 12px', borderRadius: 20, fontSize: 13, fontWeight: 600, cursor: 'pointer',
+                    border: '2px solid var(--border)', background: 'var(--bg3)', color: 'var(--text)',
+                    transition: 'all .15s',
+                  }}
+                >
+                  <Badge group={p.group} />
+                  {p.name}
+                </button>
+              ))}
+            </div>
+          )}
+          <p style={{ fontSize: 11, color: 'var(--text3)', marginTop: 10 }}>
+            Adding a player rebuilds the bracket. Only available before any matches are played.
+          </p>
+        </Card>
+      )}
 
       {/* Tabs */}
       <div className="tabs">
@@ -1826,6 +1875,13 @@ export default function TournamentApp() {
     if (view === 'setup') fetchPlayers();
   }, [view, fetchPlayers]);
 
+  // Auto-resume: if a tournament is in progress when the app loads, go straight to it
+  useEffect(() => {
+    if (tourney.rounds.length > 0 && !tourney.champion) {
+      setView('tournament');
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   function togglePlayer(p: PlayerDoc) {
     const player: Player = { name: p.name, group: p.group };
     setTourney(s => {
@@ -1994,6 +2050,36 @@ export default function TournamentApp() {
     setView('setup');
   }
 
+  function cancelTournament() {
+    if (!confirm('Cancel this tournament? All progress will be lost.')) return;
+    resetMatchCounter();
+    setTourney(INITIAL_TOURNEY);
+    setView('roster');
+  }
+
+  // Add a player to a tournament that has no completed matches yet.
+  // Re-builds the bracket/RR with the new full player list.
+  function addPlayerToTournament(p: PlayerDoc) {
+    const player: Player = { name: p.name, group: p.group };
+    setTourney((s: TournamentState) => {
+      const alreadyIn = [...s.pros, ...s.beginners].some(x => x.name === p.name);
+      if (alreadyIn) return s;
+      const newPros  = p.group === 'pro'  ? [...s.pros,      player] : s.pros;
+      const newBegs  = p.group === 'beg'  ? [...s.beginners, player] : s.beginners;
+      const next = { ...s, pros: newPros, beginners: newBegs };
+      // Rebuild bracket with updated player list
+      resetMatchCounter();
+      const teams = buildTeams(next);
+      if (s.tourneyFormat === 'elimination') {
+        const rounds = buildEliminationRounds(teams);
+        return { ...next, teams, rounds, currentRoundIdx: 0 };
+      } else {
+        const { rounds, rrStandings } = buildRoundRobin(teams);
+        return { ...next, teams, rounds, rrStandings, currentRoundIdx: 0 };
+      }
+    });
+  }
+
   const headerBadge =
     view === 'roster'   ? 'Roster'   :
     view === 'history'  ? 'History'  :
@@ -2037,9 +2123,12 @@ export default function TournamentApp() {
         {view === 'tournament' && (
           <TournamentScreen
             state={tourney}
+            allPlayers={allPlayers}
             onScoreChange={handleScoreChange}
             onMarkWinner={handleMarkWinner}
             onReset={resetToSetup}
+            onCancel={cancelTournament}
+            onAddPlayer={addPlayerToTournament}
             showRoundBanner={showRoundBanner}
           />
         )}
