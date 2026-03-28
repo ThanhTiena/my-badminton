@@ -2199,35 +2199,53 @@ function PaymentScreen({ onBack, tournamentPlayers }: { onBack: () => void; tour
                   onMouseLeave={() => setPopover(null)}>
                   <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: 600 }}>
                     <thead>
+                      {/* ── Row 1: Month + week group headers ── */}
                       <tr>
-                        <th style={{ ...headerStyle, textAlign: 'left', fontSize: 13, color: 'var(--text)', background: 'var(--bg3)', position: 'sticky', left: 0, zIndex: 3, minWidth: 140 }}>
+                        <th rowSpan={2} style={{ ...headerStyle, textAlign: 'left', fontSize: 13, color: 'var(--text)', background: 'var(--bg3)', position: 'sticky', left: 0, zIndex: 3, minWidth: 140, verticalAlign: 'middle' }}>
                           {summary.period}
                         </th>
-                        {weeks.map(([wk, wSessions]) =>
-                          wSessions.map((s: CourtSessionDoc, si: number) => (
-                            <th key={s.sessionDate} style={{ ...headerStyle, textAlign: 'center', minWidth: 100 }}>
-                              {si === 0 && (
-                                <span style={{ display: 'block', fontSize: 10, color: 'var(--accent2)', marginBottom: 2 }}>Wk {wk}</span>
-                              )}
-                              <span style={{ display: 'block' }}>{s.sessionDate.slice(5)}</span>
-                              {s.note && <span style={{ display: 'block', fontSize: 9, color: 'var(--text3)', fontWeight: 400 }}>{s.note}</span>}
-                            </th>
-                          ))
-                        )}
+                        {weeks.map(([wk, wSessions]) => (
+                          <th
+                            key={`wkhdr-${wk}`}
+                            colSpan={wSessions.length}
+                            style={{ ...headerStyle, textAlign: 'center', fontSize: 11, color: 'var(--accent2)', background: 'var(--bg3)', borderBottom: '1px solid var(--border)', padding: '5px 10px' }}
+                          >
+                            Week {wk}
+                          </th>
+                        ))}
                         {showWeekSub && weeks.map(([wk]) => (
-                          <th key={`wkh-${wk}`} style={{ ...headerStyle, color: 'var(--accent2)', minWidth: 90, textAlign: 'center' }}>
+                          <th key={`wksubhdr-${wk}`} rowSpan={2} style={{ ...headerStyle, color: 'var(--accent2)', minWidth: 90, textAlign: 'center', verticalAlign: 'middle' }}>
                             Wk {wk} sub
                           </th>
                         ))}
                         {showGrandTotal && (
-                          <th style={{ ...headerStyle, color: 'var(--accent)', fontSize: 12, minWidth: 100, textAlign: 'center' }}>
+                          <th rowSpan={2} style={{ ...headerStyle, color: 'var(--accent)', fontSize: 12, minWidth: 100, textAlign: 'center', verticalAlign: 'middle' }}>
                             Grand Total
                           </th>
                         )}
                         {summaryMode === 'monthly' && (
-                          <th style={{ ...headerStyle, color: 'var(--success)', fontSize: 12, minWidth: 70, textAlign: 'center', borderRight: 'none' }}>
+                          <th rowSpan={2} style={{ ...headerStyle, color: 'var(--success)', fontSize: 12, minWidth: 70, textAlign: 'center', borderRight: 'none', verticalAlign: 'middle' }}>
                             Paid
                           </th>
+                        )}
+                      </tr>
+                      {/* ── Row 2: Individual session date headers ── */}
+                      <tr>
+                        {weeks.map(([, wSessions]) =>
+                          wSessions.map((s: CourtSessionDoc) => (
+                            <th key={s.sessionDate} style={{ ...headerStyle, textAlign: 'center', minWidth: 100, borderTop: 'none', ...(s.highlight ? { background: 'rgba(220,38,38,.25)', borderBottom: '2px solid rgba(220,38,38,.7)' } : {}) }}>
+                              <span style={{ display: 'block' }}>{s.sessionDate.slice(5)}</span>
+                              {s.note && <span style={{ display: 'block', fontSize: 9, color: 'var(--text3)', fontWeight: 400 }}>{s.note}</span>}
+                              {s.highlight && (
+                                <span
+                                  title={s.highlightNote || 'Notable session'}
+                                  style={{ display: 'inline-block', marginTop: 2, fontSize: 10, color: '#f87171', fontWeight: 600, cursor: 'help', background: 'rgba(220,38,38,.35)', borderRadius: 4, padding: '1px 5px' }}
+                                >
+                                  ⚠ {s.highlightNote || 'Notable'}
+                                </span>
+                              )}
+                            </th>
+                          ))
                         )}
                       </tr>
                     </thead>
@@ -2246,7 +2264,7 @@ function PaymentScreen({ onBack, tournamentPlayers }: { onBack: () => void; tour
                               return (
                                 <td
                                   key={s.sessionDate}
-                                  style={{ ...cellStyle, color: a ? 'var(--text)' : 'var(--text3)', cursor: a ? 'default' : 'default', position: 'relative' }}
+                                  style={{ ...cellStyle, color: a ? 'var(--text)' : 'var(--text3)', cursor: a ? 'default' : 'default', position: 'relative', ...(s.highlight ? { background: 'rgba(220,38,38,.13)' } : {}) }}
                                   onMouseEnter={a ? ((e: { currentTarget: HTMLElement }) => {
                                     const rect = e.currentTarget.getBoundingClientRect();
                                     setPopover({ key: popKey, x: rect.left + rect.width / 2, y: rect.top, court: a.court, shuttle: a.shuttle, total: a.total, name, date: s.sessionDate, smashWeight: a.smashWeight, courtRate: a.courtRate, shuttleRate: a.shuttleRate, courtFee: a.courtFee, shuttlePool: a.shuttlePool, courtWeightSum: a.courtWeightSum, shuttleWeightSum: a.shuttleWeightSum });
@@ -2294,12 +2312,12 @@ function PaymentScreen({ onBack, tournamentPlayers }: { onBack: () => void; tour
                       {/* ── Day subtotal row ── */}
                       {showDayTotal && (
                         <tr>
-                          <td style={{ ...stickyNameStyle, fontWeight: 800, color: 'var(--accent)', background: 'rgba(57,255,20,.05)' }}>
+                          <td style={{ ...stickyNameStyle, fontWeight: 800, color: 'var(--accent)', background: '#0d1a0d' }}>
                             Day Total
                           </td>
                           {weeks.map(([, wSessions]) =>
                             wSessions.map((s: CourtSessionDoc) => (
-                              <td key={`dsub-${s.sessionDate}`} style={subStyle}>
+                              <td key={`dsub-${s.sessionDate}`} style={{ ...subStyle, ...(s.highlight ? { background: 'rgba(220,38,38,.22)' } : {}) }}>
                                 {formatVND(s.totalCost)}
                               </td>
                             ))
@@ -2311,22 +2329,6 @@ function PaymentScreen({ onBack, tournamentPlayers }: { onBack: () => void; tour
                           {showGrandTotal && <td style={{ ...grandStyle, borderRight: 'none' }}>{formatVND(grandTotal)}</td>}
                         </tr>
                       )}
-
-                      {/* ── Highlight row ── */}
-                      <tr>
-                        <td style={{ ...stickyNameStyle, fontSize: 11, color: 'var(--text3)', fontWeight: 400 }}>Highlight</td>
-                        {weeks.map(([, wSessions]) =>
-                          wSessions.map((s: CourtSessionDoc) => (
-                            <td key={`hl-${s.sessionDate}`} style={{ ...cellStyle, textAlign: 'center', padding: '4px 6px' }}>
-                              {s.highlight
-                                ? <span title={s.highlightNote || 'Notable session'} style={{ fontSize: 16, cursor: 'default' }}>⭐</span>
-                                : <span style={{ color: 'var(--text3)', fontSize: 12 }}>—</span>}
-                            </td>
-                          ))
-                        )}
-                        {showWeekSub && weeks.map(([wk]) => <td key={`hl-wk-${wk}`} style={cellStyle} />)}
-                        {showGrandTotal && <td style={{ ...cellStyle, borderRight: 'none' }} />}
-                      </tr>
 
                       {/* ── Invoice row ── */}
                       <tr>
@@ -2370,7 +2372,7 @@ function PaymentScreen({ onBack, tournamentPlayers }: { onBack: () => void; tour
                 </div>
 
                 <p style={{ fontSize: 11, color: 'var(--text3)', marginTop: 10 }}>
-                  💡 Hover any amount to see the court + shuttle formula breakdown. ⭐ = highlighted session. 🧾 = invoice attached.
+                  💡 Hover any amount to see the court + shuttle formula breakdown. 🔴 = highlighted session (⚠ badge shows note). 🧾 = invoice attached.
                 </p>
 
                 {/* ── Cell hover popover (fixed overlay) ── */}
