@@ -1495,8 +1495,73 @@ function currentWeekRef() {
   return `${year}-W${String(week).padStart(2, '0')}`;
 }
 
-function PaymentScreen({ onBack, tournamentPlayers }: { onBack: () => void; tournamentPlayers: string[] }) {
-  const [tab, setTab] = useState<PaymentTab>(tournamentPlayers.length > 0 ? 'add' : 'summary');
+function PaymentScreen({ onBack, tournamentPlayers = [] }: { onBack: () => void; tournamentPlayers?: string[] }) {
+  const [tab, setTab] = useState<PaymentTab>('add');
+
+  /* ── Admin auth state ── */
+  const [isAdmin,       setIsAdmin]       = useState(false);
+  const [authChecked,   setAuthChecked]   = useState(false);
+  const [showLogin,     setShowLogin]     = useState(false);
+  const [loginUser,     setLoginUser]     = useState('');
+  const [loginPass,     setLoginPass]     = useState('');
+  const [loginError,    setLoginError]    = useState('');
+  const [loginLoading,  setLoginLoading]  = useState(false);
+  const [showChangePw,  setShowChangePw]  = useState(false);
+  const [cpCurrent,     setCpCurrent]     = useState('');
+  const [cpNew,         setCpNew]         = useState('');
+  const [cpConfirm,     setCpConfirm]     = useState('');
+  const [cpError,       setCpError]       = useState('');
+  const [cpSuccess,     setCpSuccess]     = useState('');
+
+  useEffect(() => {
+    fetch('/api/auth/me').then(r => r.json()).then((d: { isAdmin: boolean }) => {
+      setIsAdmin(d.isAdmin);
+      setAuthChecked(true);
+    });
+  }, []);
+
+  async function handleLogin() {
+    setLoginLoading(true);
+    setLoginError('');
+    const r = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: loginUser, password: loginPass }),
+    });
+    setLoginLoading(false);
+    if (r.ok) {
+      setIsAdmin(true);
+      setShowLogin(false);
+      setLoginUser('');
+      setLoginPass('');
+    } else {
+      const d = await r.json();
+      setLoginError(d.error ?? 'Login failed');
+    }
+  }
+
+  async function handleLogout() {
+    await fetch('/api/auth/logout', { method: 'POST' });
+    setIsAdmin(false);
+  }
+
+  async function handleChangePw() {
+    setCpError('');
+    setCpSuccess('');
+    if (cpNew !== cpConfirm) { setCpError('New passwords do not match'); return; }
+    const r = await fetch('/api/auth/change-password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ currentPassword: cpCurrent, newPassword: cpNew }),
+    });
+    const d = await r.json();
+    if (r.ok) {
+      setCpSuccess('Password changed successfully');
+      setCpCurrent(''); setCpNew(''); setCpConfirm('');
+    } else {
+      setCpError(d.error ?? 'Failed');
+    }
+  }
 
   /* ── Summary state ── */
   const [summaryMode, setSummaryMode] = useState<SummaryMode>('monthly');
@@ -1986,7 +2051,7 @@ function PaymentScreen({ onBack, tournamentPlayers }: { onBack: () => void; tour
   }
 
   const TABS: [PaymentTab, string][] = [
-    ...(tournamentPlayers.length > 0 ? [['add', '➕ Add Session'] as [PaymentTab, string]] : []),
+    ['add', '➕ Add Session'],
     ['summary', '💰 Summary'],
     ['import', '📥 Import'],
     ['weights', '⚖️ Weights'],
@@ -1995,7 +2060,29 @@ function PaymentScreen({ onBack, tournamentPlayers }: { onBack: () => void; tour
   return (
     <div className="anim-fade">
       <button className="back-btn" onClick={onBack}>← Back</button>
-      <p className="page-title">💰 Payment</p>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8, marginBottom: 2 }}>
+        <p className="page-title" style={{ margin: 0 }}>💰 Payment</p>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          {isAdmin ? (
+            <>
+              <span style={{ fontSize: 12, color: 'var(--success)', fontWeight: 600 }}>🔓 Admin</span>
+              <button
+                onClick={() => { setShowChangePw(true); setCpError(''); setCpSuccess(''); setCpCurrent(''); setCpNew(''); setCpConfirm(''); }}
+                style={{ background: 'var(--bg3)', border: '1px solid var(--border)', color: 'var(--text2)', borderRadius: 8, padding: '4px 10px', fontSize: 12, cursor: 'pointer' }}
+              >🔑 Change password</button>
+              <button
+                onClick={handleLogout}
+                style={{ background: 'var(--bg3)', border: '1px solid var(--border)', color: 'var(--text3)', borderRadius: 8, padding: '4px 10px', fontSize: 12, cursor: 'pointer' }}
+              >Logout</button>
+            </>
+          ) : (
+            <button
+              onClick={() => { setShowLogin(true); setLoginError(''); setLoginUser(''); setLoginPass(''); }}
+              style={{ background: 'var(--bg3)', border: '1px solid var(--accent2)', color: 'var(--accent2)', borderRadius: 8, padding: '5px 12px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}
+            >🔐 Admin Login</button>
+          )}
+        </div>
+      </div>
       <p className="page-sub">Track court & shuttlecock costs, split fairly by smash weight.</p>
 
       <div className="tabs" style={{ marginBottom: 20 }}>
@@ -2003,6 +2090,61 @@ function PaymentScreen({ onBack, tournamentPlayers }: { onBack: () => void; tour
           <button key={id} className={`tab${tab === id ? ' active' : ''}`} onClick={() => setTab(id)}>{label}</button>
         ))}
       </div>
+
+      {/* ── Login modal ── */}
+      {showLogin && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 300, background: 'rgba(0,0,0,.7)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+          onClick={() => setShowLogin(false)}>
+          <div style={{ background: 'var(--card)', borderRadius: 16, padding: '28px 24px', width: 320, maxWidth: '90vw' }}
+            onClick={(e: { stopPropagation: () => void }) => e.stopPropagation()}>
+            <p style={{ fontWeight: 800, fontSize: 17, marginBottom: 18 }}>🔐 Admin Login</p>
+            <div style={{ marginBottom: 12 }}>
+              <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text2)', display: 'block', marginBottom: 4 }}>Username</label>
+              <input className="input" style={{ width: '100%' }} value={loginUser} onChange={e => setLoginUser(e.target.value)}
+                onKeyDown={(e: { key: string }) => e.key === 'Enter' && handleLogin()} autoFocus />
+            </div>
+            <div style={{ marginBottom: 16 }}>
+              <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text2)', display: 'block', marginBottom: 4 }}>Password</label>
+              <input className="input" style={{ width: '100%' }} type="password" value={loginPass} onChange={e => setLoginPass(e.target.value)}
+                onKeyDown={(e: { key: string }) => e.key === 'Enter' && handleLogin()} />
+            </div>
+            {loginError && <p style={{ fontSize: 13, color: 'var(--danger)', marginBottom: 12 }}>❌ {loginError}</p>}
+            <div style={{ display: 'flex', gap: 10 }}>
+              <Btn variant="primary" size="lg" full disabled={loginLoading} onClick={handleLogin}>
+                {loginLoading ? '⏳ Logging in…' : 'Login'}
+              </Btn>
+              <Btn variant="secondary" size="lg" onClick={() => setShowLogin(false)}>Cancel</Btn>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Change password modal ── */}
+      {showChangePw && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 300, background: 'rgba(0,0,0,.7)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+          onClick={() => setShowChangePw(false)}>
+          <div style={{ background: 'var(--card)', borderRadius: 16, padding: '28px 24px', width: 340, maxWidth: '90vw' }}
+            onClick={(e: { stopPropagation: () => void }) => e.stopPropagation()}>
+            <p style={{ fontWeight: 800, fontSize: 17, marginBottom: 18 }}>🔑 Change Password</p>
+            {['Current password', 'New password', 'Confirm new password'].map((label, i) => {
+              const val   = [cpCurrent, cpNew, cpConfirm][i];
+              const setter = [setCpCurrent, setCpNew, setCpConfirm][i];
+              return (
+                <div key={i} style={{ marginBottom: 12 }}>
+                  <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text2)', display: 'block', marginBottom: 4 }}>{label}</label>
+                  <input className="input" style={{ width: '100%' }} type="password" value={val} onChange={e => setter(e.target.value)} />
+                </div>
+              );
+            })}
+            {cpError   && <p style={{ fontSize: 13, color: 'var(--danger)',  marginBottom: 10 }}>❌ {cpError}</p>}
+            {cpSuccess && <p style={{ fontSize: 13, color: 'var(--success)', marginBottom: 10 }}>✅ {cpSuccess}</p>}
+            <div style={{ display: 'flex', gap: 10 }}>
+              <Btn variant="primary" size="lg" full onClick={handleChangePw}>Save</Btn>
+              <Btn variant="secondary" size="lg" onClick={() => setShowChangePw(false)}>Cancel</Btn>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ═══════════════ ADD SESSION TAB ═══════════════ */}
       {tab === 'add' && (
@@ -2590,9 +2732,10 @@ function PaymentScreen({ onBack, tournamentPlayers }: { onBack: () => void; tour
                               <input
                                 type="checkbox"
                                 checked={paidMap[name] ?? false}
-                                title={paidMap[name] ? `${name} paid` : `${name} not paid`}
-                                style={{ width: 16, height: 16, cursor: 'pointer', accentColor: 'var(--success)' }}
-                                onChange={(e: { target: HTMLInputElement }) => togglePaid(name, e.target.checked)}
+                                title={isAdmin ? (paidMap[name] ? `${name} paid` : `${name} not paid`) : 'Admin login required to change paid status'}
+                                disabled={!isAdmin}
+                                style={{ width: 16, height: 16, cursor: isAdmin ? 'pointer' : 'not-allowed', accentColor: 'var(--success)', opacity: isAdmin ? 1 : 0.5 }}
+                                onChange={(e: { target: HTMLInputElement }) => isAdmin && togglePaid(name, e.target.checked)}
                               />
                             </td>
                           )}
@@ -3128,7 +3271,7 @@ function PaymentScreen({ onBack, tournamentPlayers }: { onBack: () => void; tour
                 </p>
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6 }}>
-                <Btn variant="success" disabled={applyingAll} onClick={applyAllWeights}>
+                <Btn variant="success" disabled={applyingAll || !isAdmin} onClick={applyAllWeights}>
                   {applyingAll ? '⏳ Recalculating…' : '🔄 Apply to all sessions'}
                 </Btn>
                 {applyResult && (
@@ -3205,8 +3348,8 @@ function PaymentScreen({ onBack, tournamentPlayers }: { onBack: () => void; tour
                               {formatVND(Math.round(pv.total / 1000) * 1000)}
                             </span>
                           )}
-                          <Btn variant="secondary" size="sm" disabled={saving} onClick={() => saveWeight(p.name)}>
-                            {saving ? '⏳' : '💾 Save'}
+                          <Btn variant="secondary" size="sm" disabled={saving || !isAdmin} onClick={() => saveWeight(p.name)}>
+                            {saving ? '⏳' : isAdmin ? '💾 Save' : '🔒'}
                           </Btn>
                         </div>
 
