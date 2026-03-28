@@ -1532,11 +1532,11 @@ function PaymentScreen({ onBack, tournamentPlayers }: { onBack: () => void; tour
   const [editSelected,      setEditSelected]      = useState<Record<string, boolean>>({});
   const [editSaving,        setEditSaving]        = useState(false);
   const [editResult,        setEditResult]        = useState<string | null>(null);
-  const [editInvoice,       setEditInvoice]       = useState<string | null>(null);  // base64 data URL
+  const [editInvoices,      setEditInvoices]      = useState<string[]>([]);  // base64 data URLs
   const [uploadingInvoice,  setUploadingInvoice]  = useState(false);
 
   /* ── Invoice image click modal ── */
-  const [invoiceModal, setInvoiceModal] = useState<{ src: string; date: string } | null>(null);
+  const [invoiceModal, setInvoiceModal] = useState<{ images: string[]; idx: number; date: string } | null>(null);
 
   /* ── Monthly paid map: playerName → boolean ── */
   const [paidMap, setPaidMap] = useState<Record<string, boolean>>({});
@@ -1721,7 +1721,7 @@ function PaymentScreen({ onBack, tournamentPlayers }: { onBack: () => void; tour
     const sel: Record<string, boolean> = {};
     for (const p of s.players) sel[p.name] = true;
     setEditSelected(sel);
-    setEditInvoice(s.invoiceImage ?? null);
+    setEditInvoices(s.invoiceImages ?? []);
     setEditResult(null);
   }
 
@@ -1764,12 +1764,12 @@ function PaymentScreen({ onBack, tournamentPlayers }: { onBack: () => void; tour
     }
   }
 
-  async function saveInvoice(sessionId: string, dataUrl: string | null) {
+  async function saveInvoice(sessionId: string, images: string[]) {
     setUploadingInvoice(true);
     await fetch(`/api/payment/sessions/${sessionId}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ invoiceImage: dataUrl }),
+      body: JSON.stringify({ invoiceImages: images }),
     });
     setUploadingInvoice(false);
     // Update local summary so the invoice icon refreshes
@@ -2337,11 +2337,11 @@ function PaymentScreen({ onBack, tournamentPlayers }: { onBack: () => void; tour
                           wSessions.map((s: CourtSessionDoc) => (
                             <td
                               key={`inv-${s.sessionDate}`}
-                              style={{ ...cellStyle, textAlign: 'center', padding: '4px 6px', cursor: s.invoiceImage ? 'pointer' : 'default' }}
-                              onClick={s.invoiceImage ? () => setInvoiceModal({ src: s.invoiceImage!, date: s.sessionDate }) : undefined}
+                              style={{ ...cellStyle, textAlign: 'center', padding: '4px 6px', cursor: (s.invoiceImages?.length) ? 'pointer' : 'default' }}
+                              onClick={(s.invoiceImages?.length) ? () => setInvoiceModal({ images: s.invoiceImages!, idx: 0, date: s.sessionDate }) : undefined}
                             >
-                              {s.invoiceImage
-                                ? <span style={{ fontSize: 16 }}>🧾</span>
+                              {(s.invoiceImages?.length)
+                                ? <span style={{ fontSize: 16 }}>🧾{s.invoiceImages.length > 1 ? ` ×${s.invoiceImages.length}` : ''}</span>
                                 : <span style={{ color: 'var(--text3)', fontSize: 12 }}>—</span>}
                             </td>
                           ))
@@ -2419,10 +2419,27 @@ function PaymentScreen({ onBack, tournamentPlayers }: { onBack: () => void; tour
         >
           <div style={{ position: 'relative', maxWidth: '90vw', maxHeight: '90vh' }} onClick={(e: { stopPropagation: () => void }) => e.stopPropagation()}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-              <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text2)' }}>🧾 Invoice · {invoiceModal.date}</span>
+              <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text2)' }}>
+                🧾 Invoice · {invoiceModal.date}
+                {invoiceModal.images.length > 1 && <span style={{ fontWeight: 400, color: 'var(--text3)', marginLeft: 8 }}>{invoiceModal.idx + 1} / {invoiceModal.images.length}</span>}
+              </span>
               <button onClick={() => setInvoiceModal(null)} style={{ background: 'rgba(255,255,255,.1)', border: 'none', color: '#fff', borderRadius: 8, padding: '4px 10px', cursor: 'pointer', fontSize: 16, fontWeight: 700, marginLeft: 16 }}>✕</button>
             </div>
-            <img src={invoiceModal.src} alt="Invoice" style={{ display: 'block', maxWidth: '90vw', maxHeight: '80vh', borderRadius: 10, objectFit: 'contain' }} />
+            <img src={invoiceModal.images[invoiceModal.idx]} alt="Invoice" style={{ display: 'block', maxWidth: '90vw', maxHeight: '80vh', borderRadius: 10, objectFit: 'contain' }} />
+            {invoiceModal.images.length > 1 && (
+              <div style={{ display: 'flex', justifyContent: 'center', gap: 12, marginTop: 10 }}>
+                <button
+                  onClick={() => setInvoiceModal((m: typeof invoiceModal) => m && m.idx > 0 ? { ...m, idx: m.idx - 1 } : m)}
+                  disabled={invoiceModal.idx === 0}
+                  style={{ background: 'rgba(255,255,255,.15)', border: 'none', color: '#fff', borderRadius: 8, padding: '6px 18px', cursor: invoiceModal.idx === 0 ? 'default' : 'pointer', fontSize: 18, opacity: invoiceModal.idx === 0 ? 0.3 : 1 }}
+                >‹</button>
+                <button
+                  onClick={() => setInvoiceModal((m: typeof invoiceModal) => m && m.idx < m.images.length - 1 ? { ...m, idx: m.idx + 1 } : m)}
+                  disabled={invoiceModal.idx === invoiceModal.images.length - 1}
+                  style={{ background: 'rgba(255,255,255,.15)', border: 'none', color: '#fff', borderRadius: 8, padding: '6px 18px', cursor: invoiceModal.idx === invoiceModal.images.length - 1 ? 'default' : 'pointer', fontSize: 18, opacity: invoiceModal.idx === invoiceModal.images.length - 1 ? 0.3 : 1 }}
+                >›</button>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -2554,40 +2571,58 @@ function PaymentScreen({ onBack, tournamentPlayers }: { onBack: () => void; tour
             {/* Invoice upload */}
             <div style={{ background: 'var(--bg3)', borderRadius: 10, padding: '12px 14px', marginBottom: 14 }}>
               <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text2)', display: 'block', marginBottom: 8 }}>
-                🧾 Invoice Image
+                🧾 Invoice Images {editInvoices.length > 0 && <span style={{ fontWeight: 400, color: 'var(--text3)' }}>({editInvoices.length})</span>}
               </label>
-              {editInvoice ? (
-                <div style={{ position: 'relative', display: 'inline-block' }}>
-                  <img src={editInvoice} alt="Invoice" style={{ maxWidth: '100%', maxHeight: 200, borderRadius: 8, display: 'block', objectFit: 'contain' }} />
-                  <button
-                    onClick={() => { setEditInvoice(null); saveInvoice(String(editingSession._id), null); }}
-                    style={{ position: 'absolute', top: 4, right: 4, background: 'rgba(0,0,0,.7)', border: 'none', color: '#fff', borderRadius: 6, padding: '2px 7px', cursor: 'pointer', fontSize: 12 }}
-                  >✕ Remove</button>
+              {editInvoices.length > 0 && (
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
+                  {editInvoices.map((src: string, i: number) => (
+                    <div key={i} style={{ position: 'relative', display: 'inline-block' }}>
+                      <img src={src} alt={`Invoice ${i + 1}`} style={{ width: 80, height: 80, borderRadius: 8, objectFit: 'cover', display: 'block', cursor: 'pointer', border: '1px solid var(--border)' }}
+                        onClick={() => setInvoiceModal({ images: editInvoices, idx: i, date: editingSession.sessionDate })}
+                      />
+                      <button
+                        onClick={() => {
+                          const next = editInvoices.filter((_: string, j: number) => j !== i);
+                          setEditInvoices(next);
+                          saveInvoice(String(editingSession._id), next);
+                        }}
+                        style={{ position: 'absolute', top: 2, right: 2, background: 'rgba(0,0,0,.7)', border: 'none', color: '#fff', borderRadius: 4, padding: '1px 5px', cursor: 'pointer', fontSize: 11, lineHeight: '16px' }}
+                      >✕</button>
+                    </div>
+                  ))}
                 </div>
-              ) : (
-                <label className="invoice-upload-zone" style={{ display: 'block' }}>
-                  <input
-                    type="file"
-                    accept="image/*"
-                    style={{ display: 'none' }}
-                    onChange={(e: { target: HTMLInputElement }) => {
-                      const file = e.target.files?.[0];
-                      if (!file) return;
+              )}
+              <label className="invoice-upload-zone" style={{ display: 'block' }}>
+                <input
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  style={{ display: 'none' }}
+                  onChange={(e: { target: HTMLInputElement }) => {
+                    const files = Array.from(e.target.files ?? []);
+                    if (!files.length) return;
+                    let loaded = 0;
+                    const newUrls: string[] = [];
+                    files.forEach((file, fi) => {
                       const reader = new FileReader();
                       reader.onload = (ev) => {
-                        const dataUrl = ev.target?.result as string;
-                        setEditInvoice(dataUrl);
-                        saveInvoice(String(editingSession._id), dataUrl);
+                        newUrls[fi] = ev.target?.result as string;
+                        loaded++;
+                        if (loaded === files.length) {
+                          const next = [...editInvoices, ...newUrls];
+                          setEditInvoices(next);
+                          saveInvoice(String(editingSession._id), next);
+                        }
                       };
                       reader.readAsDataURL(file);
-                    }}
-                  />
-                  <span style={{ fontSize: 24, display: 'block', marginBottom: 4 }}>📷</span>
-                  <span style={{ fontSize: 12, color: 'var(--text3)' }}>
-                    {uploadingInvoice ? '⏳ Uploading…' : 'Click to upload invoice image'}
-                  </span>
-                </label>
-              )}
+                    });
+                  }}
+                />
+                <span style={{ fontSize: 24, display: 'block', marginBottom: 4 }}>📷</span>
+                <span style={{ fontSize: 12, color: 'var(--text3)' }}>
+                  {uploadingInvoice ? '⏳ Uploading…' : 'Click to add invoice image(s)'}
+                </span>
+              </label>
             </div>
 
             {editResult && (

@@ -50,8 +50,8 @@ export interface CourtSessionDoc {
   highlight?: boolean;
   /** Optional note explaining what the highlight is */
   highlightNote?: string;
-  /** Base64 data URL of the invoice image (e.g. "data:image/jpeg;base64,...") */
-  invoiceImage?: string;
+  /** Base64 data URLs of invoice images (e.g. ["data:image/jpeg;base64,..."]) */
+  invoiceImages?: string[];
   importedAt: Date;
 }
 

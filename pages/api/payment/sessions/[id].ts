@@ -31,7 +31,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   if (req.method === 'PATCH') {
     const body = req.body as Partial<ImportRow & {
       highlight?: boolean; highlightNote?: string;
-      invoiceImage?: string | null;
+      invoiceImages?: string[] | null;
       /** Toggle paid for one player: { playerName, paid } */
       playerPaid?: { playerName: string; paid: boolean };
     }>;
@@ -102,7 +102,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     if (body.note !== undefined)          $set.note          = body.note;
     if (body.highlight !== undefined)     $set.highlight     = body.highlight;
     if (body.highlightNote !== undefined) $set.highlightNote = body.highlightNote;
-    if (body.invoiceImage !== undefined)  $set.invoiceImage  = body.invoiceImage ?? null;
+    if (body.invoiceImages !== undefined) $set.invoiceImages = body.invoiceImages ?? [];
 
     // Per-player paid toggle: update a single player's paid flag inside the players array
     if (body.playerPaid !== undefined) {
