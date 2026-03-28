@@ -1536,6 +1536,10 @@ function PaymentScreen({ onBack, tournamentPlayers }: { onBack: () => void; tour
   const [editCourtRates,  setEditCourtRates]  = useState<Record<string, string>>({});  // name → courtRate string
   const [editShutRates,   setEditShutRates]   = useState<Record<string, string>>({});  // name → shuttleRate string
   const [savingWeight, setSavingWeight] = useState<string | null>(null);
+  // Sample session for live formula preview
+  const [previewCourt,   setPreviewCourt]   = useState('300000');
+  const [previewNumShut, setPreviewNumShut] = useState('3');
+  const [previewUnit,    setPreviewUnit]    = useState('15000');
 
   /* ── Manual Add state ── */
   const [addDate,         setAddDate]         = useState(() => new Date().toISOString().slice(0, 10));
@@ -2494,131 +2498,282 @@ function PaymentScreen({ onBack, tournamentPlayers }: { onBack: () => void; tour
       )}
 
       {/* ═══════════════ WEIGHTS TAB ═══════════════ */}
-      {tab === 'weights' && (
-        <div>
-          {/* ── Explanation card ── */}
-          <Card style={{ marginBottom: 16 }}>
-            <CardTitle>⚖️ Payment Rate Settings</CardTitle>
-            <p style={{ fontSize: 13, color: 'var(--text2)', marginBottom: 0, lineHeight: 1.7 }}>
-              Three multipliers control how much each player pays per session:<br />
-              <span style={{ color: 'var(--text3)', fontSize: 12 }}>
-                <strong style={{ color: 'var(--text2)' }}>Smash weight</strong> — shuttle share proportional to how hard they smash (1.5 = 50% more shuttle cost).<br />
-                <strong style={{ color: 'var(--text2)' }}>Court rate</strong> — fraction of a normal court share (e.g. 0.7 = pays 30% less court fee).<br />
-                <strong style={{ color: 'var(--text2)' }}>Shuttle rate</strong> — fraction of a normal shuttle share (e.g. 0.7 = women pay 30% less shuttle cost).
-              </span>
-            </p>
-          </Card>
+      {tab === 'weights' && (() => {
+        // ── Live formula computation ──────────────────────────────
+        const pvCourt  = Math.max(0, parseFloat(previewCourt)   || 0);
+        const pvShuts  = Math.max(0, parseFloat(previewNumShut) || 0);
+        const pvUnit   = Math.max(0, parseFloat(previewUnit)    || 0);
+        const pvShutTotal = pvShuts * pvUnit;
+        const pvTotal     = pvCourt + pvShutTotal;
 
-          {/* ── Per-player rate rows ── */}
-          <Card>
-            {wLoading ? (
-              <EmptyState icon="⏳" text="Loading players…" />
-            ) : allPlrs.length === 0 ? (
-              <EmptyState icon="👥" text="No players in roster yet." />
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                {allPlrs.map(p => {
-                  const cfg         = configs.find((c: PaymentConfigDoc) => c.playerName.toLowerCase() === p.name.toLowerCase());
-                  const curSmash    = editWeights[p.name]    ?? String(cfg?.smashWeight  ?? 1.0);
-                  const curCourt    = editCourtRates[p.name] ?? String(cfg?.courtRate    ?? 1.0);
-                  const curShuttle  = editShutRates[p.name]  ?? String(cfg?.shuttleRate  ?? 1.0);
-                  const saving      = savingWeight === p.name;
+        // Build per-player preview using current (unsaved) edit values
+        interface PlayerPreview {
+          name: string; group: 'pro' | 'beg';
+          smash: number; cRate: number; sRate: number;
+          savedSmash: number; savedCRate: number; savedSRate: number;
+          courtAmt: number; shuttleAmt: number; total: number;
+          savedTotal: number; changed: boolean;
+        }
 
-                  return (
-                    <div key={p.name} style={{ background: 'var(--bg3)', borderRadius: 12, padding: '12px 14px' }}>
-                      {/* Name row */}
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
-                        <Badge group={p.group} />
-                        <span style={{ fontWeight: 700, fontSize: 14, flex: 1 }}>{p.name}</span>
-                        <Btn variant="secondary" size="sm" disabled={saving} onClick={() => saveWeight(p.name)}>
-                          {saving ? '⏳' : '💾 Save'}
-                        </Btn>
-                      </div>
+        const previews: PlayerPreview[] = allPlrs.map((p: PlayerDoc) => {
+          const cfg       = configs.find((c: PaymentConfigDoc) => c.playerName.toLowerCase() === p.name.toLowerCase());
+          const smash     = Math.max(0.01, parseFloat(editWeights[p.name]    ?? String(cfg?.smashWeight  ?? 1.0)) || 1);
+          const cRate     = Math.max(0,    parseFloat(editCourtRates[p.name] ?? String(cfg?.courtRate    ?? 1.0)) || 0);
+          const sRate     = Math.max(0,    parseFloat(editShutRates[p.name]  ?? String(cfg?.shuttleRate  ?? 1.0)) || 0);
+          const savedSmash = cfg?.smashWeight  ?? 1.0;
+          const savedCRate = cfg?.courtRate    ?? 1.0;
+          const savedSRate = cfg?.shuttleRate  ?? 1.0;
+          return { name: p.name, group: p.group, smash, cRate, sRate, savedSmash, savedCRate, savedSRate,
+            courtAmt: 0, shuttleAmt: 0, total: 0, savedTotal: 0, changed: false };
+        });
 
-                      {/* Three rate controls */}
-                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 10 }}>
+        // Court pool: split by courtRate weight
+        const courtWeightSum   = previews.reduce((s, p) => s + p.cRate, 0) || 1;
+        // Shuttle pool: split by smash × shuttleRate
+        const shuttleWeightSum = previews.reduce((s, p) => s + p.smash * p.sRate, 0) || 1;
+        // Saved totals use saved values
+        const savedCourtWSum   = previews.reduce((s, p) => s + p.savedCRate, 0) || 1;
+        const savedShutWSum    = previews.reduce((s, p) => s + p.savedSmash * p.savedSRate, 0) || 1;
 
-                        {/* Smash weight */}
-                        <div>
-                          <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: .5, display: 'block', marginBottom: 6 }}>
-                            🏸 Smash weight
-                          </label>
-                          <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginBottom: 6 }}>
-                            {[0.8, 1.0, 1.2, 1.5, 2.0].map(w => (
-                              <button key={w}
-                                onClick={() => setEditWeights((prev: Record<string, string>) => ({ ...prev, [p.name]: String(w) }))}
-                                style={{
-                                  padding: '3px 8px', borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: 'pointer',
-                                  border: '1px solid var(--border)',
-                                  background: parseFloat(curSmash) === w ? 'var(--accent)' : 'var(--bg4)',
-                                  color:      parseFloat(curSmash) === w ? '#0a0e1a' : 'var(--text2)',
-                                }}>{w}×</button>
-                            ))}
-                          </div>
-                          <input type="number" min={0.1} step={0.1} className="input" style={{ width: '100%' }}
-                            value={curSmash}
-                            onChange={({ target }: { target: HTMLInputElement }) => setEditWeights((prev: Record<string, string>) => ({ ...prev, [p.name]: target.value }))}
-                          />
-                          {cfg && <span style={{ fontSize: 11, color: 'var(--text3)' }}>saved: {cfg.smashWeight}×</span>}
-                        </div>
+        previews.forEach(p => {
+          p.courtAmt   = pvCourt    * (p.cRate          / courtWeightSum);
+          p.shuttleAmt = pvShutTotal * (p.smash * p.sRate / shuttleWeightSum);
+          p.total      = p.courtAmt + p.shuttleAmt;
+          const savedCourt   = pvCourt    * (p.savedCRate / savedCourtWSum);
+          const savedShuttle = pvShutTotal * (p.savedSmash * p.savedSRate / savedShutWSum);
+          p.savedTotal = savedCourt + savedShuttle;
+          p.changed    = Math.abs(p.total - p.savedTotal) > 0.5;
+        });
 
-                        {/* Court rate */}
-                        <div>
-                          <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: .5, display: 'block', marginBottom: 6 }}>
-                            🏟 Court rate
-                          </label>
-                          <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginBottom: 6 }}>
-                            {[0.5, 0.7, 0.8, 1.0].map(w => (
-                              <button key={w}
-                                onClick={() => setEditCourtRates((prev: Record<string, string>) => ({ ...prev, [p.name]: String(w) }))}
-                                style={{
-                                  padding: '3px 8px', borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: 'pointer',
-                                  border: '1px solid var(--border)',
-                                  background: parseFloat(curCourt) === w ? 'var(--accent2)' : 'var(--bg4)',
-                                  color:      parseFloat(curCourt) === w ? '#fff' : 'var(--text2)',
-                                }}>{Math.round(w * 100)}%</button>
-                            ))}
-                          </div>
-                          <input type="number" min={0} max={2} step={0.05} className="input" style={{ width: '100%' }}
-                            value={curCourt}
-                            onChange={({ target }: { target: HTMLInputElement }) => setEditCourtRates((prev: Record<string, string>) => ({ ...prev, [p.name]: target.value }))}
-                          />
-                          {cfg && <span style={{ fontSize: 11, color: 'var(--text3)' }}>saved: {Math.round((cfg.courtRate ?? 1) * 100)}%</span>}
-                        </div>
+        const maxTotal = Math.max(...previews.map(p => p.total), 1);
 
-                        {/* Shuttle rate */}
-                        <div>
-                          <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: .5, display: 'block', marginBottom: 6 }}>
-                            🪶 Shuttle rate
-                          </label>
-                          <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginBottom: 6 }}>
-                            {[0.5, 0.7, 0.8, 1.0].map(w => (
-                              <button key={w}
-                                onClick={() => setEditShutRates((prev: Record<string, string>) => ({ ...prev, [p.name]: String(w) }))}
-                                style={{
-                                  padding: '3px 8px', borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: 'pointer',
-                                  border: '1px solid var(--border)',
-                                  background: parseFloat(curShuttle) === w ? 'var(--accent2)' : 'var(--bg4)',
-                                  color:      parseFloat(curShuttle) === w ? '#fff' : 'var(--text2)',
-                                }}>{Math.round(w * 100)}%</button>
-                            ))}
-                          </div>
-                          <input type="number" min={0} max={2} step={0.05} className="input" style={{ width: '100%' }}
-                            value={curShuttle}
-                            onChange={({ target }: { target: HTMLInputElement }) => setEditShutRates((prev: Record<string, string>) => ({ ...prev, [p.name]: target.value }))}
-                          />
-                          {cfg && <span style={{ fontSize: 11, color: 'var(--text3)' }}>saved: {Math.round((cfg.shuttleRate ?? 1) * 100)}%</span>}
-                        </div>
-
-                      </div>
+        return (
+          <div>
+            {/* ── Header + sample session inputs ── */}
+            <Card style={{ marginBottom: 16 }}>
+              <CardTitle>⚖️ Payment Rate Settings</CardTitle>
+              <p style={{ fontSize: 13, color: 'var(--text2)', marginBottom: 14, lineHeight: 1.6 }}>
+                Three multipliers per player. Changes preview instantly below — hit <strong>Save</strong> to persist.
+              </p>
+              {/* Sample session config */}
+              <div style={{ background: 'var(--bg3)', borderRadius: 10, padding: '10px 14px' }}>
+                <p style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: .6, color: 'var(--text3)', marginBottom: 8 }}>
+                  🧮 Preview session (adjust to match a typical day)
+                </p>
+                <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+                  <div>
+                    <label style={{ fontSize: 11, color: 'var(--text3)', display: 'block', marginBottom: 3 }}>Court fee (₫)</label>
+                    <input type="number" min={0} className="input" style={{ width: 120 }}
+                      value={previewCourt}
+                      onChange={({ target }: { target: HTMLInputElement }) => setPreviewCourt(target.value)} />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 11, color: 'var(--text3)', display: 'block', marginBottom: 3 }}>Shuttlecocks</label>
+                    <input type="number" min={0} className="input" style={{ width: 90 }}
+                      value={previewNumShut}
+                      onChange={({ target }: { target: HTMLInputElement }) => setPreviewNumShut(target.value)} />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 11, color: 'var(--text3)', display: 'block', marginBottom: 3 }}>Price / shuttle (₫)</label>
+                    <input type="number" min={0} className="input" style={{ width: 110 }}
+                      value={previewUnit}
+                      onChange={({ target }: { target: HTMLInputElement }) => setPreviewUnit(target.value)} />
+                  </div>
+                  {pvTotal > 0 && (
+                    <div style={{ marginLeft: 'auto', textAlign: 'right' }}>
+                      <p style={{ fontSize: 11, color: 'var(--text3)' }}>Total session cost</p>
+                      <p style={{ fontSize: 18, fontWeight: 900, color: 'var(--accent)' }}>{formatVND(pvTotal)}</p>
                     </div>
-                  );
-                })}
+                  )}
+                </div>
+              </div>
+            </Card>
+
+            {/* ── Formula preview bar (always visible when players loaded) ── */}
+            {!wLoading && allPlrs.length > 0 && pvTotal > 0 && (
+              <div className="formula-panel" style={{ marginBottom: 16 }}>
+                <div className="formula-panel-header">
+                  <span className="formula-panel-header-title">📊 Live split preview — {allPlrs.length} players · {formatVND(pvTotal)}</span>
+                  <div style={{ display: 'flex', gap: 14, fontSize: 11, color: 'var(--text3)' }}>
+                    <span><span className="formula-legend-dot" style={{ background: 'rgba(0,229,255,.5)' }} />Court</span>
+                    <span><span className="formula-legend-dot" style={{ background: 'rgba(57,255,20,.5)' }} />Shuttle</span>
+                  </div>
+                </div>
+                <div className="formula-panel-body">
+                  {previews.map(p => {
+                    const courtPct   = maxTotal > 0 ? (p.courtAmt   / maxTotal) * 100 : 0;
+                    const shuttlePct = maxTotal > 0 ? (p.shuttleAmt / maxTotal) * 100 : 0;
+                    const diff = p.total - p.savedTotal;
+                    return (
+                      <div key={p.name}>
+                        <div className="formula-row">
+                          <div className="formula-row-name">
+                            <Badge group={p.group} />
+                            <span style={{ fontSize: 12 }}>{p.name}</span>
+                          </div>
+                          <div className="formula-bar-track">
+                            <div className="formula-bar-court"   style={{ width: `${courtPct}%` }} />
+                            <div className="formula-bar-shuttle" style={{ left: `${courtPct}%`, width: `${shuttlePct}%` }} />
+                            <span className="formula-bar-label">
+                              {formatVND(Math.round(p.courtAmt / 1000) * 1000)} · {formatVND(Math.round(p.shuttleAmt / 1000) * 1000)}
+                            </span>
+                          </div>
+                          <div>
+                            <div className={`formula-amount ${p.changed ? 'formula-amount-changed' : 'formula-amount-same'}`}>
+                              {formatVND(Math.round(p.total / 1000) * 1000)}
+                              {p.changed && (
+                                <span style={{ fontSize: 10, fontWeight: 600, marginLeft: 4, color: diff > 0 ? 'var(--danger)' : 'var(--success)' }}>
+                                  {diff > 0 ? '▲' : '▼'}{formatVND(Math.abs(Math.round(diff / 1000) * 1000))}
+                                </span>
+                              )}
+                            </div>
+                            <div className="formula-breakdown">
+                              court×{(p.cRate * 100).toFixed(0)}% · smash {p.smash}× · shut×{(p.sRate * 100).toFixed(0)}%
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                <div className="formula-total-row">
+                  <span>Sum of shares</span>
+                  <strong>{formatVND(Math.round(previews.reduce((s, p) => s + p.total, 0) / 1000) * 1000)}</strong>
+                </div>
+                {previews.some(p => p.changed) && (
+                  <div style={{ padding: '5px 12px', background: 'rgba(245,158,11,.08)', borderTop: '1px solid var(--border)', fontSize: 11, color: 'var(--warn)', textAlign: 'center' }}>
+                    ⚠️ Unsaved changes — amounts shown differ from last saved rates. Hit Save on each player to apply.
+                  </div>
+                )}
               </div>
             )}
-          </Card>
-        </div>
-      )}
+
+            {/* ── Per-player rate cards ── */}
+            <Card>
+              {wLoading ? (
+                <EmptyState icon="⏳" text="Loading players…" />
+              ) : allPlrs.length === 0 ? (
+                <EmptyState icon="👥" text="No players in roster yet." />
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  {allPlrs.map((p: PlayerDoc) => {
+                    const cfg        = configs.find((c: PaymentConfigDoc) => c.playerName.toLowerCase() === p.name.toLowerCase());
+                    const curSmash   = editWeights[p.name]    ?? String(cfg?.smashWeight  ?? 1.0);
+                    const curCourt   = editCourtRates[p.name] ?? String(cfg?.courtRate    ?? 1.0);
+                    const curShuttle = editShutRates[p.name]  ?? String(cfg?.shuttleRate  ?? 1.0);
+                    const saving     = savingWeight === p.name;
+                    const pv         = previews.find(x => x.name === p.name);
+
+                    return (
+                      <div key={p.name} style={{ background: 'var(--bg3)', borderRadius: 12, padding: '12px 14px' }}>
+                        {/* Name + total preview + save */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+                          <Badge group={p.group} />
+                          <span style={{ fontWeight: 700, fontSize: 14, flex: 1 }}>{p.name}</span>
+                          {pv && pvTotal > 0 && (
+                            <span style={{ fontSize: 13, fontWeight: 800, color: pv.changed ? 'var(--warn)' : 'var(--accent)' }}>
+                              {formatVND(Math.round(pv.total / 1000) * 1000)}
+                            </span>
+                          )}
+                          <Btn variant="secondary" size="sm" disabled={saving} onClick={() => saveWeight(p.name)}>
+                            {saving ? '⏳' : '💾 Save'}
+                          </Btn>
+                        </div>
+
+                        {/* Three rate controls */}
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 10 }}>
+
+                          {/* Smash weight */}
+                          <div>
+                            <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: .5, display: 'block', marginBottom: 6 }}>
+                              🏸 Smash weight
+                              <span style={{ fontSize: 10, color: 'var(--text3)', fontWeight: 400, marginLeft: 4, textTransform: 'none' }}>shuttle share multiplier</span>
+                            </label>
+                            <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginBottom: 6 }}>
+                              {[0.8, 1.0, 1.2, 1.5, 2.0].map(w => (
+                                <button key={w}
+                                  onClick={() => setEditWeights((prev: Record<string, string>) => ({ ...prev, [p.name]: String(w) }))}
+                                  style={{
+                                    padding: '3px 8px', borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: 'pointer',
+                                    border: '1px solid var(--border)',
+                                    background: parseFloat(curSmash) === w ? 'var(--accent)' : 'var(--bg4)',
+                                    color:      parseFloat(curSmash) === w ? '#0a0e1a' : 'var(--text2)',
+                                  }}>{w}×</button>
+                              ))}
+                            </div>
+                            <input type="number" min={0.1} step={0.1} className="input" style={{ width: '100%' }}
+                              value={curSmash}
+                              onChange={({ target }: { target: HTMLInputElement }) => setEditWeights((prev: Record<string, string>) => ({ ...prev, [p.name]: target.value }))}
+                            />
+                            {cfg && parseFloat(curSmash) !== cfg.smashWeight && (
+                              <span style={{ fontSize: 11, color: 'var(--warn)' }}>saved: {cfg.smashWeight}×</span>
+                            )}
+                          </div>
+
+                          {/* Court rate */}
+                          <div>
+                            <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: .5, display: 'block', marginBottom: 6 }}>
+                              🏟 Court rate
+                              <span style={{ fontSize: 10, color: 'var(--text3)', fontWeight: 400, marginLeft: 4, textTransform: 'none' }}>% of court share</span>
+                            </label>
+                            <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginBottom: 6 }}>
+                              {[0.5, 0.7, 0.8, 1.0].map(w => (
+                                <button key={w}
+                                  onClick={() => setEditCourtRates((prev: Record<string, string>) => ({ ...prev, [p.name]: String(w) }))}
+                                  style={{
+                                    padding: '3px 8px', borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: 'pointer',
+                                    border: '1px solid var(--border)',
+                                    background: parseFloat(curCourt) === w ? 'var(--accent2)' : 'var(--bg4)',
+                                    color:      parseFloat(curCourt) === w ? '#0a0e1a' : 'var(--text2)',
+                                  }}>{Math.round(w * 100)}%</button>
+                              ))}
+                            </div>
+                            <input type="number" min={0} max={2} step={0.05} className="input" style={{ width: '100%' }}
+                              value={curCourt}
+                              onChange={({ target }: { target: HTMLInputElement }) => setEditCourtRates((prev: Record<string, string>) => ({ ...prev, [p.name]: target.value }))}
+                            />
+                            {cfg && parseFloat(curCourt) !== (cfg.courtRate ?? 1) && (
+                              <span style={{ fontSize: 11, color: 'var(--warn)' }}>saved: {Math.round((cfg.courtRate ?? 1) * 100)}%</span>
+                            )}
+                          </div>
+
+                          {/* Shuttle rate */}
+                          <div>
+                            <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: .5, display: 'block', marginBottom: 6 }}>
+                              🪶 Shuttle rate
+                              <span style={{ fontSize: 10, color: 'var(--text3)', fontWeight: 400, marginLeft: 4, textTransform: 'none' }}>% of shuttle share</span>
+                            </label>
+                            <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginBottom: 6 }}>
+                              {[0.5, 0.7, 0.8, 1.0].map(w => (
+                                <button key={w}
+                                  onClick={() => setEditShutRates((prev: Record<string, string>) => ({ ...prev, [p.name]: String(w) }))}
+                                  style={{
+                                    padding: '3px 8px', borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: 'pointer',
+                                    border: '1px solid var(--border)',
+                                    background: parseFloat(curShuttle) === w ? 'var(--accent2)' : 'var(--bg4)',
+                                    color:      parseFloat(curShuttle) === w ? '#0a0e1a' : 'var(--text2)',
+                                  }}>{Math.round(w * 100)}%</button>
+                              ))}
+                            </div>
+                            <input type="number" min={0} max={2} step={0.05} className="input" style={{ width: '100%' }}
+                              value={curShuttle}
+                              onChange={({ target }: { target: HTMLInputElement }) => setEditShutRates((prev: Record<string, string>) => ({ ...prev, [p.name]: target.value }))}
+                            />
+                            {cfg && parseFloat(curShuttle) !== (cfg.shuttleRate ?? 1) && (
+                              <span style={{ fontSize: 11, color: 'var(--warn)' }}>saved: {Math.round((cfg.shuttleRate ?? 1) * 100)}%</span>
+                            )}
+                          </div>
+
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </Card>
+          </div>
+        );
+      })()}
     </div>
   );
 }
