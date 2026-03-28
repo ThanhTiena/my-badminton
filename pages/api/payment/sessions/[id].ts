@@ -29,7 +29,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   if (req.method === 'PATCH') {
-    const body = req.body as Partial<ImportRow & { highlight?: boolean; highlightNote?: string }>;
+    const body = req.body as Partial<ImportRow & {
+      highlight?: boolean; highlightNote?: string;
+      invoiceImage?: string | null;
+      /** Toggle paid for one player: { playerName, paid } */
+      playerPaid?: { playerName: string; paid: boolean };
+    }>;
 
     // Build the $set payload — only include fields that were sent
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -97,6 +102,18 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     if (body.note !== undefined)          $set.note          = body.note;
     if (body.highlight !== undefined)     $set.highlight     = body.highlight;
     if (body.highlightNote !== undefined) $set.highlightNote = body.highlightNote;
+    if (body.invoiceImage !== undefined)  $set.invoiceImage  = body.invoiceImage ?? null;
+
+    // Per-player paid toggle: update a single player's paid flag inside the players array
+    if (body.playerPaid !== undefined) {
+      const existing = await col.findOne({ _id: oid });
+      if (!existing) return res.status(404).json({ error: 'Session not found' });
+      const { playerName, paid } = body.playerPaid;
+      const updatedPlayers = existing.players.map(p =>
+        p.name === playerName ? { ...p, paid } : p
+      );
+      $set.players = updatedPlayers;
+    }
 
     if (Object.keys($set).length === 0) {
       return res.status(400).json({ error: 'No updatable fields provided' });

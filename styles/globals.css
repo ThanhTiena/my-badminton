@@ -994,3 +994,48 @@ body {
 }
 .formula-total-row strong { color: var(--accent); }
 .stat-chip strong { color: var(--text); font-size: 13px; }
+
+/* ── Invoice image popover ── */
+.invoice-popover {
+  position: fixed;
+  z-index: 1000;
+  pointer-events: none;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 8px;
+  box-shadow: 0 12px 48px rgba(0,0,0,.7);
+  animation: popIn .15s ease both;
+}
+.invoice-popover-label {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text3);
+  text-transform: uppercase;
+  letter-spacing: .5px;
+  margin-bottom: 6px;
+  text-align: center;
+}
+.invoice-popover img {
+  display: block;
+  max-width: 260px;
+  max-height: 320px;
+  width: auto;
+  height: auto;
+  border-radius: 6px;
+  object-fit: contain;
+}
+
+/* ── Invoice upload zone ── */
+.invoice-upload-zone {
+  border: 2px dashed var(--border);
+  border-radius: 10px;
+  padding: 16px;
+  text-align: center;
+  cursor: pointer;
+  transition: border-color .2s, background .2s;
+}
+.invoice-upload-zone:hover {
+  border-color: var(--accent2);
+  background: rgba(0,229,255,.04);
+}

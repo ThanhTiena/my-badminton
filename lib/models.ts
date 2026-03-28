@@ -24,6 +24,8 @@ export interface SessionPlayer {
   amountOwed: number;
   /** VND share rounded to nearest 1000 — persisted so all devices agree */
   amountOwedRounded: number;
+  /** Whether this player has paid their share for this session */
+  paid?: boolean;
 }
 
 export interface CourtSessionDoc {
@@ -48,6 +50,8 @@ export interface CourtSessionDoc {
   highlight?: boolean;
   /** Optional note explaining what the highlight is */
   highlightNote?: string;
+  /** Base64 data URL of the invoice image (e.g. "data:image/jpeg;base64,...") */
+  invoiceImage?: string;
   importedAt: Date;
 }
 

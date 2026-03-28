@@ -1532,6 +1532,11 @@ function PaymentScreen({ onBack, tournamentPlayers }: { onBack: () => void; tour
   const [editSelected,      setEditSelected]      = useState<Record<string, boolean>>({});
   const [editSaving,        setEditSaving]        = useState(false);
   const [editResult,        setEditResult]        = useState<string | null>(null);
+  const [editInvoice,       setEditInvoice]       = useState<string | null>(null);  // base64 data URL
+  const [uploadingInvoice,  setUploadingInvoice]  = useState(false);
+
+  /* ── Invoice image hover popover ── */
+  const [invoicePopover, setInvoicePopover] = useState<{ x: number; y: number; src: string; date: string } | null>(null);
 
   /* ── Import state ── */
   const [importText,    setImportText]    = useState('');
@@ -1705,6 +1710,7 @@ function PaymentScreen({ onBack, tournamentPlayers }: { onBack: () => void; tour
     const sel: Record<string, boolean> = {};
     for (const p of s.players) sel[p.name] = true;
     setEditSelected(sel);
+    setEditInvoice(s.invoiceImage ?? null);
     setEditResult(null);
   }
 
@@ -1745,6 +1751,38 @@ function PaymentScreen({ onBack, tournamentPlayers }: { onBack: () => void; tour
       const data = await res.json();
       setEditResult(`❌ ${data.error}`);
     }
+  }
+
+  async function saveInvoice(sessionId: string, dataUrl: string | null) {
+    setUploadingInvoice(true);
+    await fetch(`/api/payment/sessions/${sessionId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ invoiceImage: dataUrl }),
+    });
+    setUploadingInvoice(false);
+    // Update local summary so the invoice icon refreshes
+    const qs = summaryMode === 'range'
+      ? `mode=range&from=${rangeFrom}&to=${rangeTo}`
+      : `mode=${summaryMode}&ref=${summaryRef}`;
+    fetch(`/api/payment/summary?${qs}`)
+      .then(r => r.json())
+      .then((data: SummaryData) => setSummary(data));
+  }
+
+  async function togglePaid(sessionId: string, playerName: string, paid: boolean) {
+    await fetch(`/api/payment/sessions/${sessionId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ playerPaid: { playerName, paid } }),
+    });
+    // Refresh summary to reflect the change
+    const qs = summaryMode === 'range'
+      ? `mode=range&from=${rangeFrom}&to=${rangeTo}`
+      : `mode=${summaryMode}&ref=${summaryRef}`;
+    fetch(`/api/payment/summary?${qs}`)
+      .then(r => r.json())
+      .then((data: SummaryData) => setSummary(data));
   }
 
   async function deleteSession(id: string) {
@@ -2266,6 +2304,64 @@ function PaymentScreen({ onBack, tournamentPlayers }: { onBack: () => void; tour
                         {showGrandTotal && <td style={{ ...cellStyle, borderRight: 'none' }} />}
                       </tr>
 
+                      {/* ── Invoice row ── */}
+                      <tr>
+                        <td style={{ ...stickyNameStyle, fontSize: 11, color: 'var(--text3)', fontWeight: 400 }}>🧾 Invoice</td>
+                        {weeks.map(([, wSessions]) =>
+                          wSessions.map((s: CourtSessionDoc) => (
+                            <td
+                              key={`inv-${s.sessionDate}`}
+                              style={{ ...cellStyle, textAlign: 'center', padding: '4px 6px', cursor: s.invoiceImage ? 'pointer' : 'default' }}
+                              onMouseEnter={s.invoiceImage ? ((e: { currentTarget: HTMLElement }) => {
+                                const rect = e.currentTarget.getBoundingClientRect();
+                                setInvoicePopover({ x: rect.left + rect.width / 2, y: rect.top, src: s.invoiceImage!, date: s.sessionDate });
+                              }) : undefined}
+                              onMouseLeave={() => setInvoicePopover(null)}
+                            >
+                              {s.invoiceImage
+                                ? <span style={{ fontSize: 16 }}>🧾</span>
+                                : <span style={{ color: 'var(--text3)', fontSize: 12 }}>—</span>}
+                            </td>
+                          ))
+                        )}
+                        {showWeekSub && weeks.map(([wk]) => <td key={`inv-wk-${wk}`} style={cellStyle} />)}
+                        {showGrandTotal && <td style={{ ...cellStyle, borderRight: 'none' }} />}
+                      </tr>
+
+                      {/* ── Paid row — one checkbox per player per day ── */}
+                      {allNames.map(name => (
+                        <tr key={`paid-${name}`}>
+                          <td style={{ ...stickyNameStyle, fontSize: 11, color: 'var(--text3)', fontWeight: 400 }}>
+                            ✅ {name} paid
+                          </td>
+                          {weeks.map(([, wSessions]) =>
+                            wSessions.map((s: CourtSessionDoc) => {
+                              const p = s.players.find(pl => pl.name === name);
+                              if (!p) return (
+                                <td key={`paid-${s.sessionDate}-${name}`} style={{ ...cellStyle, textAlign: 'center', padding: '4px 6px' }}>
+                                  <span style={{ color: 'var(--text3)', fontSize: 12 }}>—</span>
+                                </td>
+                              );
+                              return (
+                                <td key={`paid-${s.sessionDate}-${name}`} style={{ ...cellStyle, textAlign: 'center', padding: '4px 6px' }}>
+                                  <input
+                                    type="checkbox"
+                                    checked={p.paid ?? false}
+                                    title={p.paid ? 'Paid' : 'Not paid'}
+                                    style={{ width: 15, height: 15, cursor: 'pointer', accentColor: 'var(--success)' }}
+                                    onChange={(e: { target: HTMLInputElement }) =>
+                                      togglePaid(String(s._id), name, e.target.checked)
+                                    }
+                                  />
+                                </td>
+                              );
+                            })
+                          )}
+                          {showWeekSub && weeks.map(([wk]) => <td key={`paid-wk-${wk}-${name}`} style={cellStyle} />)}
+                          {showGrandTotal && <td style={{ ...cellStyle, borderRight: 'none' }} />}
+                        </tr>
+                      ))}
+
                       {/* ── Actions row ── */}
                       <tr>
                         <td style={{ ...stickyNameStyle, fontSize: 11, color: 'var(--text3)', fontWeight: 400 }}>Actions</td>
@@ -2287,7 +2383,7 @@ function PaymentScreen({ onBack, tournamentPlayers }: { onBack: () => void; tour
                 </div>
 
                 <p style={{ fontSize: 11, color: 'var(--text3)', marginTop: 10 }}>
-                  💡 Hover any amount to see the court + shuttle formula breakdown. ⭐ = highlighted session.
+                  💡 Hover any amount to see the court + shuttle formula breakdown. ⭐ = highlighted session. 🧾 = invoice attached.
                 </p>
 
                 {/* ── Cell hover popover (fixed overlay) ── */}
@@ -2327,6 +2423,21 @@ function PaymentScreen({ onBack, tournamentPlayers }: { onBack: () => void; tour
           })()}
         </div>
       )}
+
+      {/* ── Invoice image hover popover ── */}
+      {invoicePopover && (() => {
+        const above = invoicePopover.y > window.innerHeight / 2;
+        return (
+          <div className="invoice-popover" style={{
+            left: Math.min(Math.max(invoicePopover.x - 138, 8), window.innerWidth - 284),
+            top: above ? invoicePopover.y - 12 : invoicePopover.y + 32,
+            transform: above ? 'translateY(-100%)' : 'translateY(0)',
+          }}>
+            <div className="invoice-popover-label">🧾 Invoice · {invoicePopover.date}</div>
+            <img src={invoicePopover.src} alt="Invoice" />
+          </div>
+        );
+      })()}
 
       {/* ═══════════ EDIT SESSION MODAL ═══════════ */}
       {editingSession && (
@@ -2451,6 +2562,45 @@ function PaymentScreen({ onBack, tournamentPlayers }: { onBack: () => void; tour
                 </>
               );
             })()}
+
+            {/* Invoice upload */}
+            <div style={{ background: 'var(--bg3)', borderRadius: 10, padding: '12px 14px', marginBottom: 14 }}>
+              <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text2)', display: 'block', marginBottom: 8 }}>
+                🧾 Invoice Image
+              </label>
+              {editInvoice ? (
+                <div style={{ position: 'relative', display: 'inline-block' }}>
+                  <img src={editInvoice} alt="Invoice" style={{ maxWidth: '100%', maxHeight: 200, borderRadius: 8, display: 'block', objectFit: 'contain' }} />
+                  <button
+                    onClick={() => { setEditInvoice(null); saveInvoice(String(editingSession._id), null); }}
+                    style={{ position: 'absolute', top: 4, right: 4, background: 'rgba(0,0,0,.7)', border: 'none', color: '#fff', borderRadius: 6, padding: '2px 7px', cursor: 'pointer', fontSize: 12 }}
+                  >✕ Remove</button>
+                </div>
+              ) : (
+                <label className="invoice-upload-zone" style={{ display: 'block' }}>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    style={{ display: 'none' }}
+                    onChange={(e: { target: HTMLInputElement }) => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+                      const reader = new FileReader();
+                      reader.onload = (ev) => {
+                        const dataUrl = ev.target?.result as string;
+                        setEditInvoice(dataUrl);
+                        saveInvoice(String(editingSession._id), dataUrl);
+                      };
+                      reader.readAsDataURL(file);
+                    }}
+                  />
+                  <span style={{ fontSize: 24, display: 'block', marginBottom: 4 }}>📷</span>
+                  <span style={{ fontSize: 12, color: 'var(--text3)' }}>
+                    {uploadingInvoice ? '⏳ Uploading…' : 'Click to upload invoice image'}
+                  </span>
+                </label>
+              )}
+            </div>
 
             {editResult && (
               <p style={{ fontSize: 13, fontWeight: 700, color: editResult.startsWith('✅') ? 'var(--success)' : 'var(--danger)', marginBottom: 12 }}>
