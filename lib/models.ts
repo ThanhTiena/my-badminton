@@ -12,6 +12,14 @@ export interface SessionPlayer {
   /** Smash-weight snapshot at import time (1.0 = normal, 1.5 = heavy smasher).
    *  Snapshotted so past records are stable if weights change later. */
   smashWeight: number;
+  /** Court rate snapshot (default 1.0). e.g. 0.7 = pays 70% of a normal court share. */
+  courtRate: number;
+  /** Shuttle rate snapshot (default 1.0). e.g. 0.7 = pays 30% less shuttle cost. */
+  shuttleRate: number;
+  /** Exact VND court share (2 dp) */
+  courtShare: number;
+  /** Exact VND shuttle share (2 dp) */
+  shuttleShare: number;
   /** Exact VND share = courtShare + shuttleShare (2 dp) */
   amountOwed: number;
   /** VND share rounded to nearest 1000 — persisted so all devices agree */

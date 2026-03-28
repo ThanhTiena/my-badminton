@@ -97,6 +97,10 @@ export function computeSessionAmounts(input: ComputeInput): ComputeResult {
     return {
       name:              p.name,
       smashWeight:       p.smashWeight,
+      courtRate:         cRate,
+      shuttleRate:       sRate,
+      courtShare,
+      shuttleShare,
       amountOwed,
       amountOwedRounded: roundVND(amountOwed),
     };

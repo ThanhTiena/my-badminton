@@ -1510,8 +1510,15 @@ function PaymentScreen({ onBack, tournamentPlayers }: { onBack: () => void; tour
   const [showDayTotal,   setShowDayTotal]   = useState(true);
   const [showWeekSub,    setShowWeekSub]    = useState(true);
   const [showGrandTotal, setShowGrandTotal] = useState(true);
-  // Hover popover: { key: sessionDate-playerName, x, y, content }
-  const [popover, setPopover] = useState<{ key: string; x: number; y: number; court: number; shuttle: number; total: number; name: string; date: string } | null>(null);
+  // Hover popover
+  const [popover, setPopover] = useState<{
+    key: string; x: number; y: number;
+    court: number; shuttle: number; total: number;
+    name: string; date: string;
+    smashWeight: number; courtRate: number; shuttleRate: number;
+    courtFee: number; shuttlePool: number;
+    courtWeightSum: number; shuttleWeightSum: number;
+  } | null>(null);
 
   /* ── Edit session modal state ── */
   const [editingSession,    setEditingSession]    = useState<CourtSessionDoc | null>(null);
@@ -2036,13 +2043,30 @@ function PaymentScreen({ onBack, tournamentPlayers }: { onBack: () => void; tour
             const weeks = Array.from(weekMap.entries()).sort((a, b) => a[0] - b[0]);
 
             // Helper: get a player's amount for one session (null = not in session)
-            function playerAmt(s: CourtSessionDoc, name: string): { court: number; shuttle: number; total: number } | null {
+            function playerAmt(s: CourtSessionDoc, name: string): {
+              court: number; shuttle: number; total: number;
+              smashWeight: number; courtRate: number; shuttleRate: number;
+              courtFee: number; shuttlePool: number;
+              courtWeightSum: number; shuttleWeightSum: number;
+            } | null {
               const p = s.players.find(pl => pl.name === name);
               if (!p) return null;
-              const courtShare = s.courtFee / s.players.length;
-              const shuttleShare = (showRounded ? p.amountOwedRounded : p.amountOwed) - courtShare;
-              const total = showRounded ? p.amountOwedRounded : p.amountOwed;
-              return { court: courtShare, shuttle: shuttleShare, total };
+              // Use stored per-player shares — fall back to proportional split for old records
+              const court   = p.courtShare   ?? (s.courtFee / s.players.length);
+              const shuttle = p.shuttleShare ?? ((showRounded ? p.amountOwedRounded : p.amountOwed) - (s.courtFee / s.players.length));
+              const total   = showRounded ? p.amountOwedRounded : p.amountOwed;
+              const courtWeightSum   = s.players.reduce((sum, pl) => sum + (pl.courtRate   ?? 1.0), 0);
+              const shuttleWeightSum = s.players.reduce((sum, pl) => sum + (pl.smashWeight * (pl.shuttleRate ?? 1.0)), 0);
+              return {
+                court, shuttle, total,
+                smashWeight:     p.smashWeight,
+                courtRate:       p.courtRate   ?? 1.0,
+                shuttleRate:     p.shuttleRate ?? 1.0,
+                courtFee:        s.courtFee,
+                shuttlePool:     s.shuttlecockTotal,
+                courtWeightSum,
+                shuttleWeightSum,
+              };
             }
 
             // Grand totals per player
@@ -2157,7 +2181,7 @@ function PaymentScreen({ onBack, tournamentPlayers }: { onBack: () => void; tour
                                   style={{ ...cellStyle, color: a ? 'var(--text)' : 'var(--text3)', cursor: a ? 'default' : 'default', position: 'relative' }}
                                   onMouseEnter={a ? ((e: { currentTarget: HTMLElement }) => {
                                     const rect = e.currentTarget.getBoundingClientRect();
-                                    setPopover({ key: popKey, x: rect.left + rect.width / 2, y: rect.top, court: a.court, shuttle: a.shuttle, total: a.total, name, date: s.sessionDate });
+                                    setPopover({ key: popKey, x: rect.left + rect.width / 2, y: rect.top, court: a.court, shuttle: a.shuttle, total: a.total, name, date: s.sessionDate, smashWeight: a.smashWeight, courtRate: a.courtRate, shuttleRate: a.shuttleRate, courtFee: a.courtFee, shuttlePool: a.shuttlePool, courtWeightSum: a.courtWeightSum, shuttleWeightSum: a.shuttleWeightSum });
                                   }) : undefined}
                                   onMouseLeave={() => setPopover(null)}
                                 >
@@ -2271,8 +2295,10 @@ function PaymentScreen({ onBack, tournamentPlayers }: { onBack: () => void; tour
                         <span className="cell-popover-val">{formatVND(popover.total)}</span>
                       </div>
                       <div className="cell-popover-formula">
-                        court ÷ players × courtRate<br />
-                        + smashWt × shuttleRate ÷ Σweights × shuttlePool
+                        {/* Court formula */}
+                        🏟 ({popover.courtRate.toFixed(2)} ÷ {popover.courtWeightSum.toFixed(2)}) × {formatVND(popover.courtFee)} = {formatVND(popover.court)}<br />
+                        {/* Shuttle formula */}
+                        🪶 ({popover.smashWeight.toFixed(2)} × {popover.shuttleRate.toFixed(2)} ÷ {popover.shuttleWeightSum.toFixed(2)}) × {formatVND(popover.shuttlePool)} = {formatVND(popover.shuttle)}
                       </div>
                     </div>
                   );
