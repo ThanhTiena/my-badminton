@@ -2314,7 +2314,7 @@ function PaymentScreen({ onBack, tournamentPlayers }: { onBack: () => void; tour
                       {/* ── Week Total row — one cell per week group ── */}
                       {showWeekSub && (
                         <tr>
-                          <td style={{ ...stickyNameStyle, fontWeight: 700, color: 'var(--accent2)', background: 'rgba(168,85,247,.07)' }}>
+                          <td style={{ ...stickyNameStyle, fontWeight: 700, color: 'var(--accent2)', background: 'var(--card)' }}>
                             Week Total
                           </td>
                           {weeks.map(([wk, wSessions]) => {
