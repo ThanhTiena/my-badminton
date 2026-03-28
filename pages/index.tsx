@@ -2429,12 +2429,12 @@ function PaymentScreen({ onBack, tournamentPlayers }: { onBack: () => void; tour
             {invoiceModal.images.length > 1 && (
               <div style={{ display: 'flex', justifyContent: 'center', gap: 12, marginTop: 10 }}>
                 <button
-                  onClick={() => setInvoiceModal((m: typeof invoiceModal) => m && m.idx > 0 ? { ...m, idx: m.idx - 1 } : m)}
+                  onClick={() => setInvoiceModal({ ...invoiceModal, idx: invoiceModal.idx - 1 })}
                   disabled={invoiceModal.idx === 0}
                   style={{ background: 'rgba(255,255,255,.15)', border: 'none', color: '#fff', borderRadius: 8, padding: '6px 18px', cursor: invoiceModal.idx === 0 ? 'default' : 'pointer', fontSize: 18, opacity: invoiceModal.idx === 0 ? 0.3 : 1 }}
                 >‹</button>
                 <button
-                  onClick={() => setInvoiceModal((m: typeof invoiceModal) => m && m.idx < m.images.length - 1 ? { ...m, idx: m.idx + 1 } : m)}
+                  onClick={() => setInvoiceModal({ ...invoiceModal, idx: invoiceModal.idx + 1 })}
                   disabled={invoiceModal.idx === invoiceModal.images.length - 1}
                   style={{ background: 'rgba(255,255,255,.15)', border: 'none', color: '#fff', borderRadius: 8, padding: '6px 18px', cursor: invoiceModal.idx === invoiceModal.images.length - 1 ? 'default' : 'pointer', fontSize: 18, opacity: invoiceModal.idx === invoiceModal.images.length - 1 ? 0.3 : 1 }}
                 >›</button>
