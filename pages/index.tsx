@@ -2631,8 +2631,6 @@ function PaymentScreen({ onBack, tournamentPlayers }: { onBack: () => void; tour
           p.changed    = Math.abs(p.total - p.savedTotal) > 0.5;
         });
 
-        const maxTotal = Math.max(...previews.map(p => p.total), 1);
-
         return (
           <div>
             {/* ── Apply-all banner ── */}
@@ -2697,64 +2695,6 @@ function PaymentScreen({ onBack, tournamentPlayers }: { onBack: () => void; tour
               </div>
             </Card>
 
-            {/* ── Formula preview bar (always visible when players loaded) ── */}
-            {!wLoading && allPlrs.length > 0 && pvTotal > 0 && (
-              <div className="formula-panel" style={{ marginBottom: 16 }}>
-                <div className="formula-panel-header">
-                  <span className="formula-panel-header-title">📊 Live split preview — {allPlrs.length} players · {formatVND(pvTotal)}</span>
-                  <div style={{ display: 'flex', gap: 14, fontSize: 11, color: 'var(--text3)' }}>
-                    <span><span className="formula-legend-dot" style={{ background: 'rgba(0,229,255,.5)' }} />Court</span>
-                    <span><span className="formula-legend-dot" style={{ background: 'rgba(57,255,20,.5)' }} />Shuttle</span>
-                  </div>
-                </div>
-                <div className="formula-panel-body">
-                  {previews.map(p => {
-                    const courtPct   = maxTotal > 0 ? (p.courtAmt   / maxTotal) * 100 : 0;
-                    const shuttlePct = maxTotal > 0 ? (p.shuttleAmt / maxTotal) * 100 : 0;
-                    const diff = p.total - p.savedTotal;
-                    return (
-                      <div key={p.name}>
-                        <div className="formula-row">
-                          <div className="formula-row-name">
-                            <Badge group={p.group} />
-                            <span style={{ fontSize: 12 }}>{p.name}</span>
-                          </div>
-                          <div className="formula-bar-track">
-                            <div className="formula-bar-court"   style={{ width: `${courtPct}%` }} />
-                            <div className="formula-bar-shuttle" style={{ left: `${courtPct}%`, width: `${shuttlePct}%` }} />
-                            <span className="formula-bar-label">
-                              {formatVND(Math.round(p.courtAmt / 1000) * 1000)} · {formatVND(Math.round(p.shuttleAmt / 1000) * 1000)}
-                            </span>
-                          </div>
-                          <div>
-                            <div className={`formula-amount ${p.changed ? 'formula-amount-changed' : 'formula-amount-same'}`}>
-                              {formatVND(Math.round(p.total / 1000) * 1000)}
-                              {p.changed && (
-                                <span style={{ fontSize: 10, fontWeight: 600, marginLeft: 4, color: diff > 0 ? 'var(--danger)' : 'var(--success)' }}>
-                                  {diff > 0 ? '▲' : '▼'}{formatVND(Math.abs(Math.round(diff / 1000) * 1000))}
-                                </span>
-                              )}
-                            </div>
-                            <div className="formula-breakdown">
-                              court×{(p.cRate * 100).toFixed(0)}% · smash {p.smash}× · shut×{(p.sRate * 100).toFixed(0)}%
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-                <div className="formula-total-row">
-                  <span>Sum of shares</span>
-                  <strong>{formatVND(Math.round(previews.reduce((s, p) => s + p.total, 0) / 1000) * 1000)}</strong>
-                </div>
-                {previews.some(p => p.changed) && (
-                  <div style={{ padding: '5px 12px', background: 'rgba(245,158,11,.08)', borderTop: '1px solid var(--border)', fontSize: 11, color: 'var(--warn)', textAlign: 'center' }}>
-                    ⚠️ Unsaved changes — amounts shown differ from last saved rates. Hit Save on each player to apply.
-                  </div>
-                )}
-              </div>
-            )}
 
             {/* ── Per-player rate cards ── */}
             <Card>
