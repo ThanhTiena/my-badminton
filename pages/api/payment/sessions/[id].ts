@@ -52,16 +52,27 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       const shuttlecockUnitPrice = body.shuttlecockUnitPrice ?? existing.shuttlecockUnitPrice;
       const playerNames     = (body.players && body.players.length > 0) ? body.players : existing.players.map(p => p.name);
 
-      // Re-fetch weights
+      // Re-fetch configs
       const cfgCol  = client.db(DB).collection<PaymentConfigDoc>(CFG_COL);
       const allCfgs = await cfgCol.find({}).toArray();
-      const weightMap = new Map<string, number>();
-      for (const cfg of allCfgs) weightMap.set(cfg.playerName.toLowerCase(), cfg.smashWeight);
+      const cfgMap  = new Map<string, { smashWeight: number; courtRate: number; shuttleRate: number }>();
+      for (const cfg of allCfgs) {
+        cfgMap.set(cfg.playerName.toLowerCase(), {
+          smashWeight: cfg.smashWeight,
+          courtRate:   cfg.courtRate   ?? 1.0,
+          shuttleRate: cfg.shuttleRate ?? 1.0,
+        });
+      }
 
-      const playersWithWeight = playerNames.map((name: string) => ({
-        name,
-        smashWeight: weightMap.get(name.toLowerCase()) ?? 1.0,
-      }));
+      const playersWithWeight = playerNames.map((name: string) => {
+        const cfg = cfgMap.get(name.toLowerCase());
+        return {
+          name,
+          smashWeight: cfg?.smashWeight ?? 1.0,
+          courtRate:   cfg?.courtRate   ?? 1.0,
+          shuttleRate: cfg?.shuttleRate ?? 1.0,
+        };
+      });
 
       const { shuttlecockTotal, totalCost, players } = computeSessionAmounts({
         players: playersWithWeight,

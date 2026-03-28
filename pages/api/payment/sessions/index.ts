@@ -65,20 +65,29 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return res.status(400).json({ error: 'Body must be a non-empty array of import rows' });
     }
 
-    // Load all smash-weight configs into a map for O(1) lookup
+    // Load all configs into a map for O(1) lookup
     const allConfigs = await cfgCol.find({}).toArray();
-    const weightMap  = new Map<string, number>();
+    const cfgMap = new Map<string, { smashWeight: number; courtRate: number; shuttleRate: number }>();
     for (const cfg of allConfigs) {
-      weightMap.set(cfg.playerName.toLowerCase(), cfg.smashWeight);
+      cfgMap.set(cfg.playerName.toLowerCase(), {
+        smashWeight: cfg.smashWeight,
+        courtRate:   cfg.courtRate   ?? 1.0,
+        shuttleRate: cfg.shuttleRate ?? 1.0,
+      });
     }
 
     const docs: CourtSessionDoc[] = body.map(row => {
       const date = new Date(row.date);
 
-      const playersWithWeight = row.players.map(name => ({
-        name,
-        smashWeight: weightMap.get(name.toLowerCase()) ?? 1.0,  // default = 1.0
-      }));
+      const playersWithWeight = row.players.map(name => {
+        const cfg = cfgMap.get(name.toLowerCase());
+        return {
+          name,
+          smashWeight: cfg?.smashWeight ?? 1.0,
+          courtRate:   cfg?.courtRate   ?? 1.0,
+          shuttleRate: cfg?.shuttleRate ?? 1.0,
+        };
+      });
 
       const { shuttlecockTotal, totalCost, players } = computeSessionAmounts({
         players:             playersWithWeight,

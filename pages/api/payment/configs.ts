@@ -22,9 +22,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(200).json(configs);
   }
 
-  /* ── POST — upsert one player's smash weight ────────────── */
+  /* ── POST — upsert one player's payment config ──────────── */
   if (req.method === 'POST') {
-    const { playerName, smashWeight } = req.body as { playerName?: string; smashWeight?: number };
+    const { playerName, smashWeight, courtRate, shuttleRate } =
+      req.body as { playerName?: string; smashWeight?: number; courtRate?: number; shuttleRate?: number };
 
     if (!playerName?.trim()) {
       return res.status(400).json({ error: '"playerName" is required' });
@@ -32,11 +33,19 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     if (typeof smashWeight !== 'number' || smashWeight <= 0) {
       return res.status(400).json({ error: '"smashWeight" must be a positive number' });
     }
+    if (courtRate !== undefined && (typeof courtRate !== 'number' || courtRate < 0)) {
+      return res.status(400).json({ error: '"courtRate" must be a non-negative number' });
+    }
+    if (shuttleRate !== undefined && (typeof shuttleRate !== 'number' || shuttleRate < 0)) {
+      return res.status(400).json({ error: '"shuttleRate" must be a non-negative number' });
+    }
 
     const doc: Omit<PaymentConfigDoc, '_id'> = {
-      playerName: playerName.trim(),
+      playerName:  playerName.trim(),
       smashWeight,
-      updatedAt: new Date(),
+      courtRate:   courtRate   ?? 1.0,
+      shuttleRate: shuttleRate ?? 1.0,
+      updatedAt:   new Date(),
     };
 
     await col.updateOne(

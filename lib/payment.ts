@@ -60,7 +60,7 @@ export function getISOWeek(dateStr: string): number {
 /* ── Per-session cost computation ────────────────────────── */
 
 export interface ComputeInput {
-  players: { name: string; smashWeight: number }[];
+  players: { name: string; smashWeight: number; courtRate?: number; shuttleRate?: number }[];
   courtFee: number;
   numShuttlecocks: number;
   shuttlecockUnitPrice: number;
@@ -82,11 +82,17 @@ export function computeSessionAmounts(input: ComputeInput): ComputeResult {
 
   const shuttlecockTotal = toDP(numShuttlecocks * shuttlecockUnitPrice);
   const totalCost        = toDP(courtFee + shuttlecockTotal);
-  const courtShare       = toDP(courtFee / n);
-  const weightSum        = players.reduce((s, p) => s + p.smashWeight, 0);
+
+  // Court split: weighted by courtRate (default 1.0 = equal split)
+  const courtWeightSum = players.reduce((s, p) => s + (p.courtRate ?? 1.0), 0);
+  // Shuttle split: weighted by smashWeight × shuttleRate
+  const shuttleWeightSum = players.reduce((s, p) => s + p.smashWeight * (p.shuttleRate ?? 1.0), 0);
 
   const result: SessionPlayer[] = players.map(p => {
-    const shuttleShare = toDP((p.smashWeight / weightSum) * shuttlecockTotal);
+    const cRate        = p.courtRate   ?? 1.0;
+    const sRate        = p.shuttleRate ?? 1.0;
+    const courtShare   = toDP((cRate / courtWeightSum) * courtFee);
+    const shuttleShare = toDP(((p.smashWeight * sRate) / shuttleWeightSum) * shuttlecockTotal);
     const amountOwed   = toDP(courtShare + shuttleShare);
     return {
       name:              p.name,

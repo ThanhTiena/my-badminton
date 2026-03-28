@@ -56,6 +56,16 @@ export interface PaymentConfigDoc {
   playerName: string;
   /** 1.0 = standard share; >1 = pays proportionally more shuttlecock cost */
   smashWeight: number;
+  /**
+   * Multiplier on this player's court share (0–2, default 1.0).
+   * e.g. 0.7 = pays 70% of a normal court share.
+   */
+  courtRate: number;
+  /**
+   * Multiplier on this player's shuttle share (0–2, default 1.0).
+   * e.g. 0.7 = women pay 30% less shuttle cost.
+   */
+  shuttleRate: number;
   updatedAt: Date;
 }
 
