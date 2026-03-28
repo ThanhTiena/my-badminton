@@ -1548,7 +1548,9 @@ function PaymentScreen({ onBack, tournamentPlayers }: { onBack: () => void; tour
   const [editWeights,     setEditWeights]     = useState<Record<string, string>>({});  // name → smashWeight string
   const [editCourtRates,  setEditCourtRates]  = useState<Record<string, string>>({});  // name → courtRate string
   const [editShutRates,   setEditShutRates]   = useState<Record<string, string>>({});  // name → shuttleRate string
-  const [savingWeight, setSavingWeight] = useState<string | null>(null);
+  const [savingWeight,  setSavingWeight]  = useState<string | null>(null);
+  const [applyingAll,   setApplyingAll]   = useState(false);
+  const [applyResult,   setApplyResult]   = useState<string | null>(null);
   // Sample session for live formula preview
   const [previewCourt,   setPreviewCourt]   = useState('300000');
   const [previewNumShut, setPreviewNumShut] = useState('3');
@@ -1771,6 +1773,23 @@ function PaymentScreen({ onBack, tournamentPlayers }: { onBack: () => void; tour
     const cfgs: PaymentConfigDoc[] = await fetch('/api/payment/configs').then(r => r.json());
     setConfigs(cfgs);
     setSavingWeight(null);
+  }
+
+  async function applyAllWeights() {
+    setApplyingAll(true);
+    setApplyResult(null);
+    const r = await fetch('/api/payment/sessions/recalculate', { method: 'POST' });
+    const data = await r.json();
+    setApplyResult(`✅ Recalculated ${data.updated} session${data.updated !== 1 ? 's' : ''} with latest rates.`);
+    setApplyingAll(false);
+    // Refresh summary so pivot table reflects new amounts
+    setSummLoading(true);
+    const qs = summaryMode === 'range'
+      ? `mode=range&from=${rangeFrom}&to=${rangeTo}`
+      : `mode=${summaryMode}&ref=${summaryRef}`;
+    fetch(`/api/payment/summary?${qs}`)
+      .then(res => res.json())
+      .then((d: SummaryData) => { setSummary(d); setSummLoading(false); });
   }
 
   /* ── mode-ref sync ── */
@@ -2616,11 +2635,33 @@ function PaymentScreen({ onBack, tournamentPlayers }: { onBack: () => void; tour
 
         return (
           <div>
+            {/* ── Apply-all banner ── */}
+            <div style={{
+              background: 'rgba(57,255,20,.07)', border: '1px solid rgba(57,255,20,.25)',
+              borderRadius: 12, padding: '12px 16px', marginBottom: 16,
+              display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap',
+            }}>
+              <div style={{ flex: 1, minWidth: 200 }}>
+                <p style={{ fontWeight: 700, fontSize: 13, marginBottom: 2 }}>Apply rates to all sessions</p>
+                <p style={{ fontSize: 12, color: 'var(--text3)', lineHeight: 1.5 }}>
+                  After finalising weights below, click this to recalculate every session in the Summary tab using the latest saved rates.
+                </p>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6 }}>
+                <Btn variant="success" disabled={applyingAll} onClick={applyAllWeights}>
+                  {applyingAll ? '⏳ Recalculating…' : '🔄 Apply to all sessions'}
+                </Btn>
+                {applyResult && (
+                  <span style={{ fontSize: 12, color: 'var(--success)' }}>{applyResult}</span>
+                )}
+              </div>
+            </div>
+
             {/* ── Header + sample session inputs ── */}
             <Card style={{ marginBottom: 16 }}>
               <CardTitle>⚖️ Payment Rate Settings</CardTitle>
               <p style={{ fontSize: 13, color: 'var(--text2)', marginBottom: 14, lineHeight: 1.6 }}>
-                Three multipliers per player. Changes preview instantly below — hit <strong>Save</strong> to persist.
+                Three multipliers per player. Changes preview instantly below — hit <strong>Save</strong> to persist, then <strong>Apply to all sessions</strong> above to recalculate the Summary.
               </p>
               {/* Sample session config */}
               <div style={{ background: 'var(--bg3)', borderRadius: 10, padding: '10px 14px' }}>
