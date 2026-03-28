@@ -1505,7 +1505,13 @@ function PaymentScreen({ onBack, tournamentPlayers }: { onBack: () => void; tour
   const [rangeTo,     setRangeTo]     = useState(() => new Date().toISOString().slice(0, 10));
   const [summary,     setSummary]     = useState<SummaryData | null>(null);
   const [summLoading, setSummLoading] = useState(false);
-  const [showRounded, setShowRounded] = useState(false);   // global round toggle for summary tab
+  const [showRounded,    setShowRounded]    = useState(false);
+  // Column visibility toggles
+  const [showDayTotal,   setShowDayTotal]   = useState(true);
+  const [showWeekSub,    setShowWeekSub]    = useState(true);
+  const [showGrandTotal, setShowGrandTotal] = useState(true);
+  // Hover popover: { key: sessionDate-playerName, x, y, content }
+  const [popover, setPopover] = useState<{ key: string; x: number; y: number; court: number; shuttle: number; total: number; name: string; date: string } | null>(null);
 
   /* ── Edit session modal state ── */
   const [editingSession,    setEditingSession]    = useState<CourtSessionDoc | null>(null);
@@ -1964,7 +1970,8 @@ function PaymentScreen({ onBack, tournamentPlayers }: { onBack: () => void; tour
         <div>
           {/* Filter bar */}
           <Card style={{ marginBottom: 16 }}>
-            <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 12 }}>
+            {/* Row 1: period picker */}
+            <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 12, marginBottom: 12 }}>
               <div className="pills" style={{ margin: 0 }}>
                 <button className={`pill${summaryMode === 'monthly' ? ' active' : ''}`} onClick={() => handleModeChange('monthly')}>📅 Monthly</button>
                 <button className={`pill${summaryMode === 'weekly'  ? ' active' : ''}`} onClick={() => handleModeChange('weekly')}>📆 Weekly</button>
@@ -1979,24 +1986,30 @@ function PaymentScreen({ onBack, tournamentPlayers }: { onBack: () => void; tour
               )}
               {summaryMode === 'range' && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <input
-                    type="date" className="input" style={{ width: 150 }}
-                    value={rangeFrom}
-                    max={rangeTo}
-                    onChange={({ target }: { target: HTMLInputElement }) => setRangeFrom(target.value)}
-                  />
+                  <input type="date" className="input" style={{ width: 150 }} value={rangeFrom} max={rangeTo}
+                    onChange={({ target }: { target: HTMLInputElement }) => setRangeFrom(target.value)} />
                   <span style={{ fontSize: 13, color: 'var(--text3)' }}>–</span>
-                  <input
-                    type="date" className="input" style={{ width: 150 }}
-                    value={rangeTo}
-                    min={rangeFrom}
-                    onChange={({ target }: { target: HTMLInputElement }) => setRangeTo(target.value)}
-                  />
+                  <input type="date" className="input" style={{ width: 150 }} value={rangeTo} min={rangeFrom}
+                    onChange={({ target }: { target: HTMLInputElement }) => setRangeTo(target.value)} />
                 </div>
               )}
+            </div>
 
-              <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, cursor: 'pointer', marginLeft: 'auto' }}>
-                <input type="checkbox" checked={showRounded} onChange={({ target }: { target: HTMLInputElement }) => setShowRounded(target.checked)} style={{ width: 16, height: 16 }} />
+            {/* Row 2: display options */}
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16, alignItems: 'center', paddingTop: 10, borderTop: '1px solid var(--border)' }}>
+              <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: .5 }}>Show columns:</span>
+              {([
+                ['showDayTotal',   showDayTotal,   setShowDayTotal,   'Day total'],
+                ['showWeekSub',    showWeekSub,    setShowWeekSub,    'Week subtotal'],
+                ['showGrandTotal', showGrandTotal, setShowGrandTotal, 'Grand total'],
+              ] as [string, boolean, (v: boolean) => void, string][]).map(([key, val, setter, label]) => (
+                <label key={key} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, cursor: 'pointer', userSelect: 'none' }}>
+                  <input type="checkbox" checked={val} onChange={({ target }: { target: HTMLInputElement }) => setter(target.checked)} style={{ width: 15, height: 15, accentColor: 'var(--accent2)' }} />
+                  {label}
+                </label>
+              ))}
+              <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, cursor: 'pointer', marginLeft: 'auto', userSelect: 'none' }}>
+                <input type="checkbox" checked={showRounded} onChange={({ target }: { target: HTMLInputElement }) => setShowRounded(target.checked)} style={{ width: 15, height: 15, accentColor: 'var(--accent)' }} />
                 Round to 1 000 ₫
               </label>
             </div>
@@ -2095,53 +2108,59 @@ function PaymentScreen({ onBack, tournamentPlayers }: { onBack: () => void; tour
                 </div>
 
                 {/* Pivot table */}
-                <div style={{ overflowX: 'auto', borderRadius: 12, border: '1px solid var(--border)', background: 'var(--card)' }}>
+                <div style={{ overflowX: 'auto', borderRadius: 12, border: '1px solid var(--border)', background: 'var(--card)' }}
+                  onMouseLeave={() => setPopover(null)}>
                   <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: 600 }}>
                     <thead>
-                      {/* Month header spanning everything */}
                       <tr>
-                        <th style={{ ...headerStyle, textAlign: 'left', fontSize: 13, color: 'var(--text)', background: 'var(--bg3)', position: 'sticky', left: 0, zIndex: 3, minWidth: 110 }}>
+                        <th style={{ ...headerStyle, textAlign: 'left', fontSize: 13, color: 'var(--text)', background: 'var(--bg3)', position: 'sticky', left: 0, zIndex: 3, minWidth: 140 }}>
                           {summary.period}
                         </th>
-                        {weeks.map(([wk, wSessions]) => (
+                        {weeks.map(([wk, wSessions]) =>
                           wSessions.map((s: CourtSessionDoc, si: number) => (
-                            <th key={s.sessionDate} style={{ ...headerStyle, textAlign: 'center', minWidth: 90 }}
-                              colSpan={1}>
+                            <th key={s.sessionDate} style={{ ...headerStyle, textAlign: 'center', minWidth: 100 }}>
                               {si === 0 && (
-                                <span style={{ display: 'block', fontSize: 10, color: 'var(--accent2)', marginBottom: 2 }}>
-                                  Wk {wk}
-                                </span>
+                                <span style={{ display: 'block', fontSize: 10, color: 'var(--accent2)', marginBottom: 2 }}>Wk {wk}</span>
                               )}
                               <span style={{ display: 'block' }}>{s.sessionDate.slice(5)}</span>
-                              {s.note && <span style={{ display: 'block', fontSize: 9, color: 'var(--text3)', fontWeight: 400, maxWidth: 80, overflow: 'hidden', textOverflow: 'ellipsis' }}>{s.note}</span>}
+                              {s.note && <span style={{ display: 'block', fontSize: 9, color: 'var(--text3)', fontWeight: 400 }}>{s.note}</span>}
                             </th>
                           ))
-                        ))}
-                        {/* Week subtotal headers */}
-                        {weeks.map(([wk]) => (
+                        )}
+                        {showWeekSub && weeks.map(([wk]) => (
                           <th key={`wkh-${wk}`} style={{ ...headerStyle, color: 'var(--accent2)', minWidth: 90, textAlign: 'center' }}>
                             Wk {wk} sub
                           </th>
                         ))}
-                        <th style={{ ...headerStyle, color: 'var(--accent)', fontSize: 12, minWidth: 100, textAlign: 'center', borderRight: 'none' }}>
-                          Grand Total
-                        </th>
+                        {showGrandTotal && (
+                          <th style={{ ...headerStyle, color: 'var(--accent)', fontSize: 12, minWidth: 100, textAlign: 'center', borderRight: 'none' }}>
+                            Grand Total
+                          </th>
+                        )}
                       </tr>
                     </thead>
 
                     <tbody>
                       {/* ── Player rows ── */}
                       {allNames.map(name => (
-                        <tr key={name} style={{ transition: 'background .1s' }}>
+                        <tr key={name}>
                           <td style={stickyNameStyle}>{name}</td>
 
-                          {/* Day cells */}
+                          {/* Day cells — hover shows popover */}
                           {weeks.map(([, wSessions]) =>
                             wSessions.map((s: CourtSessionDoc) => {
                               const a = playerAmt(s, name);
+                              const popKey = `${s.sessionDate}-${name}`;
                               return (
-                                <td key={s.sessionDate} style={{ ...cellStyle, color: a ? 'var(--text)' : 'var(--text3)' }}
-                                  title={a ? `Court: ${formatVND(a.court)}\nShuttles: ${formatVND(a.shuttle)}\nTotal: ${formatVND(a.total)}` : 'Not in this session'}>
+                                <td
+                                  key={s.sessionDate}
+                                  style={{ ...cellStyle, color: a ? 'var(--text)' : 'var(--text3)', cursor: a ? 'default' : 'default', position: 'relative' }}
+                                  onMouseEnter={a ? ((e: { currentTarget: HTMLElement }) => {
+                                    const rect = e.currentTarget.getBoundingClientRect();
+                                    setPopover({ key: popKey, x: rect.left + rect.width / 2, y: rect.top, court: a.court, shuttle: a.shuttle, total: a.total, name, date: s.sessionDate });
+                                  }) : undefined}
+                                  onMouseLeave={() => setPopover(null)}
+                                >
                                   {a ? formatVND(a.total) : '—'}
                                 </td>
                               );
@@ -2149,7 +2168,7 @@ function PaymentScreen({ onBack, tournamentPlayers }: { onBack: () => void; tour
                           )}
 
                           {/* Week subtotals */}
-                          {weeks.map(([wk, wSessions]) => {
+                          {showWeekSub && weeks.map(([wk, wSessions]) => {
                             const wt = weekPlayerTotal(wSessions, name);
                             return (
                               <td key={`wt-${wk}-${name}`} style={weekStyle}>
@@ -2159,83 +2178,105 @@ function PaymentScreen({ onBack, tournamentPlayers }: { onBack: () => void; tour
                           })}
 
                           {/* Grand total */}
-                          <td style={{ ...grandStyle, borderRight: 'none' }}>
-                            {grandTotals[name] > 0 ? formatVND(grandTotals[name]) : '—'}
-                          </td>
+                          {showGrandTotal && (
+                            <td style={{ ...grandStyle, borderRight: 'none' }}>
+                              {grandTotals[name] > 0 ? formatVND(grandTotals[name]) : '—'}
+                            </td>
+                          )}
                         </tr>
                       ))}
 
                       {/* ── Day subtotal row ── */}
-                      <tr>
-                        <td style={{ ...stickyNameStyle, fontWeight: 800, color: 'var(--accent)', background: 'rgba(57,255,20,.05)' }}>
-                          Day Total
-                        </td>
-                        {weeks.map(([, wSessions]) =>
-                          wSessions.map((s: CourtSessionDoc) => (
-                            <td key={`dsub-${s.sessionDate}`} style={subStyle}>
-                              {formatVND(s.totalCost)}
-                            </td>
-                          ))
-                        )}
-                        {/* Week cost subtotals */}
-                        {weeks.map(([wk, wSessions]) => {
-                          const wCost = wSessions.reduce((s: number, sess: CourtSessionDoc) => s + sess.totalCost, 0);
-                          return <td key={`wcs-${wk}`} style={weekStyle}>{formatVND(wCost)}</td>;
-                        })}
-                        <td style={{ ...grandStyle, borderRight: 'none' }}>{formatVND(grandTotal)}</td>
-                      </tr>
+                      {showDayTotal && (
+                        <tr>
+                          <td style={{ ...stickyNameStyle, fontWeight: 800, color: 'var(--accent)', background: 'rgba(57,255,20,.05)' }}>
+                            Day Total
+                          </td>
+                          {weeks.map(([, wSessions]) =>
+                            wSessions.map((s: CourtSessionDoc) => (
+                              <td key={`dsub-${s.sessionDate}`} style={subStyle}>
+                                {formatVND(s.totalCost)}
+                              </td>
+                            ))
+                          )}
+                          {showWeekSub && weeks.map(([wk, wSessions]) => {
+                            const wCost = wSessions.reduce((s: number, sess: CourtSessionDoc) => s + sess.totalCost, 0);
+                            return <td key={`wcs-${wk}`} style={weekStyle}>{formatVND(wCost)}</td>;
+                          })}
+                          {showGrandTotal && <td style={{ ...grandStyle, borderRight: 'none' }}>{formatVND(grandTotal)}</td>}
+                        </tr>
+                      )}
 
                       {/* ── Highlight row ── */}
                       <tr>
-                        <td style={{ ...stickyNameStyle, fontSize: 11, color: 'var(--text3)', fontWeight: 400 }}>
-                          Highlight
-                        </td>
+                        <td style={{ ...stickyNameStyle, fontSize: 11, color: 'var(--text3)', fontWeight: 400 }}>Highlight</td>
                         {weeks.map(([, wSessions]) =>
                           wSessions.map((s: CourtSessionDoc) => (
                             <td key={`hl-${s.sessionDate}`} style={{ ...cellStyle, textAlign: 'center', padding: '4px 6px' }}>
                               {s.highlight
                                 ? <span title={s.highlightNote || 'Notable session'} style={{ fontSize: 16, cursor: 'default' }}>⭐</span>
-                                : <span style={{ color: 'var(--text3)', fontSize: 12 }}>—</span>
-                              }
+                                : <span style={{ color: 'var(--text3)', fontSize: 12 }}>—</span>}
                             </td>
                           ))
                         )}
-                        {weeks.map(([wk]) => <td key={`hl-wk-${wk}`} style={cellStyle} />)}
-                        <td style={{ ...cellStyle, borderRight: 'none' }} />
+                        {showWeekSub && weeks.map(([wk]) => <td key={`hl-wk-${wk}`} style={cellStyle} />)}
+                        {showGrandTotal && <td style={{ ...cellStyle, borderRight: 'none' }} />}
                       </tr>
 
                       {/* ── Actions row ── */}
                       <tr>
-                        <td style={{ ...stickyNameStyle, fontSize: 11, color: 'var(--text3)', fontWeight: 400 }}>
-                          Actions
-                        </td>
+                        <td style={{ ...stickyNameStyle, fontSize: 11, color: 'var(--text3)', fontWeight: 400 }}>Actions</td>
                         {weeks.map(([, wSessions]) =>
                           wSessions.map((s: CourtSessionDoc) => (
                             <td key={`act-${s.sessionDate}`} style={{ ...cellStyle, textAlign: 'center', padding: '4px 4px' }}>
-                              <button
-                                onClick={() => openEditSession(s)}
-                                title="Edit session"
-                                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--accent2)', fontSize: 14, lineHeight: 1, marginRight: 4 }}
-                              >✏️</button>
-                              <button
-                                onClick={() => deleteSession(String(s._id))}
-                                title="Delete session"
-                                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--danger)', fontSize: 14, lineHeight: 1 }}
-                              >🗑</button>
+                              <button onClick={() => openEditSession(s)} title="Edit"
+                                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--accent2)', fontSize: 14, lineHeight: 1, marginRight: 4 }}>✏️</button>
+                              <button onClick={() => deleteSession(String(s._id))} title="Delete"
+                                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--danger)', fontSize: 14, lineHeight: 1 }}>🗑</button>
                             </td>
                           ))
                         )}
-                        {weeks.map(([wk]) => <td key={`act-wk-${wk}`} style={cellStyle} />)}
-                        <td style={{ ...cellStyle, borderRight: 'none' }} />
+                        {showWeekSub && weeks.map(([wk]) => <td key={`act-wk-${wk}`} style={cellStyle} />)}
+                        {showGrandTotal && <td style={{ ...cellStyle, borderRight: 'none' }} />}
                       </tr>
                     </tbody>
                   </table>
                 </div>
 
-                {/* Legend */}
                 <p style={{ fontSize: 11, color: 'var(--text3)', marginTop: 10 }}>
-                  💡 Hover any cell to see court + shuttle breakdown. ⭐ = highlighted session (hover for note).
+                  💡 Hover any amount to see the court + shuttle formula breakdown. ⭐ = highlighted session.
                 </p>
+
+                {/* ── Cell hover popover (fixed overlay) ── */}
+                {popover && (() => {
+                  const above = popover.y > 220;
+                  return (
+                    <div className="cell-popover" style={{
+                      left: Math.min(popover.x - 95, window.innerWidth - 210),
+                      top: above ? popover.y - 10 : popover.y + 36,
+                      transform: above ? 'translateY(-100%)' : 'translateY(0)',
+                    }}>
+                      <div className="cell-popover-title">{popover.name} · {popover.date}</div>
+                      <div className="cell-popover-row">
+                        <span className="cell-popover-label">🏟 Court share</span>
+                        <span className="cell-popover-val">{formatVND(popover.court)}</span>
+                      </div>
+                      <div className="cell-popover-row">
+                        <span className="cell-popover-label">🪶 Shuttle share</span>
+                        <span className="cell-popover-val">{formatVND(popover.shuttle)}</span>
+                      </div>
+                      <div className="cell-popover-divider" />
+                      <div className="cell-popover-row cell-popover-total">
+                        <span className="cell-popover-label">Total</span>
+                        <span className="cell-popover-val">{formatVND(popover.total)}</span>
+                      </div>
+                      <div className="cell-popover-formula">
+                        court ÷ players × courtRate<br />
+                        + smashWt × shuttleRate ÷ Σweights × shuttlePool
+                      </div>
+                    </div>
+                  );
+                })()}
               </>
             );
           })()}
