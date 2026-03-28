@@ -1535,8 +1535,11 @@ function PaymentScreen({ onBack, tournamentPlayers }: { onBack: () => void; tour
   const [editInvoice,       setEditInvoice]       = useState<string | null>(null);  // base64 data URL
   const [uploadingInvoice,  setUploadingInvoice]  = useState(false);
 
-  /* ── Invoice image hover popover ── */
-  const [invoicePopover, setInvoicePopover] = useState<{ x: number; y: number; src: string; date: string } | null>(null);
+  /* ── Invoice image click modal ── */
+  const [invoiceModal, setInvoiceModal] = useState<{ src: string; date: string } | null>(null);
+
+  /* ── Monthly paid map: playerName → boolean ── */
+  const [paidMap, setPaidMap] = useState<Record<string, boolean>>({});
 
   /* ── Import state ── */
   const [importText,    setImportText]    = useState('');
@@ -1638,6 +1641,14 @@ function PaymentScreen({ onBack, tournamentPlayers }: { onBack: () => void; tour
     fetch(`/api/payment/summary?${qs}`)
       .then(r => r.json())
       .then((data: SummaryData) => { setSummary(data); setSummLoading(false); });
+    // Load paid map for monthly mode
+    if (summaryMode === 'monthly') {
+      fetch(`/api/payment/paid?period=${summaryRef}`)
+        .then(r => r.json())
+        .then((map: Record<string, boolean>) => setPaidMap(map));
+    } else {
+      setPaidMap({});
+    }
   }, [tab, summaryMode, summaryRef, rangeFrom, rangeTo]);
 
   /* ── load weights when tab switches ── */
@@ -1770,19 +1781,14 @@ function PaymentScreen({ onBack, tournamentPlayers }: { onBack: () => void; tour
       .then((data: SummaryData) => setSummary(data));
   }
 
-  async function togglePaid(sessionId: string, playerName: string, paid: boolean) {
-    await fetch(`/api/payment/sessions/${sessionId}`, {
-      method: 'PATCH',
+  async function togglePaid(playerName: string, paid: boolean) {
+    const period = summaryRef;  // "YYYY-MM"
+    setPaidMap((prev: Record<string, boolean>) => ({ ...prev, [playerName]: paid }));
+    await fetch('/api/payment/paid', {
+      method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ playerPaid: { playerName, paid } }),
+      body: JSON.stringify({ period, playerName, paid }),
     });
-    // Refresh summary to reflect the change
-    const qs = summaryMode === 'range'
-      ? `mode=range&from=${rangeFrom}&to=${rangeTo}`
-      : `mode=${summaryMode}&ref=${summaryRef}`;
-    fetch(`/api/payment/summary?${qs}`)
-      .then(r => r.json())
-      .then((data: SummaryData) => setSummary(data));
   }
 
   async function deleteSession(id: string) {
@@ -2214,8 +2220,13 @@ function PaymentScreen({ onBack, tournamentPlayers }: { onBack: () => void; tour
                           </th>
                         ))}
                         {showGrandTotal && (
-                          <th style={{ ...headerStyle, color: 'var(--accent)', fontSize: 12, minWidth: 100, textAlign: 'center', borderRight: 'none' }}>
+                          <th style={{ ...headerStyle, color: 'var(--accent)', fontSize: 12, minWidth: 100, textAlign: 'center' }}>
                             Grand Total
+                          </th>
+                        )}
+                        {summaryMode === 'monthly' && (
+                          <th style={{ ...headerStyle, color: 'var(--success)', fontSize: 12, minWidth: 70, textAlign: 'center', borderRight: 'none' }}>
+                            Paid
                           </th>
                         )}
                       </tr>
@@ -2260,8 +2271,21 @@ function PaymentScreen({ onBack, tournamentPlayers }: { onBack: () => void; tour
 
                           {/* Grand total */}
                           {showGrandTotal && (
-                            <td style={{ ...grandStyle, borderRight: 'none' }}>
+                            <td style={{ ...grandStyle }}>
                               {grandTotals[name] > 0 ? formatVND(grandTotals[name]) : '—'}
+                            </td>
+                          )}
+
+                          {/* Monthly paid checkbox */}
+                          {summaryMode === 'monthly' && (
+                            <td style={{ ...cellStyle, textAlign: 'center', borderRight: 'none' }}>
+                              <input
+                                type="checkbox"
+                                checked={paidMap[name] ?? false}
+                                title={paidMap[name] ? `${name} paid` : `${name} not paid`}
+                                style={{ width: 16, height: 16, cursor: 'pointer', accentColor: 'var(--success)' }}
+                                onChange={(e: { target: HTMLInputElement }) => togglePaid(name, e.target.checked)}
+                              />
                             </td>
                           )}
                         </tr>
@@ -2312,11 +2336,7 @@ function PaymentScreen({ onBack, tournamentPlayers }: { onBack: () => void; tour
                             <td
                               key={`inv-${s.sessionDate}`}
                               style={{ ...cellStyle, textAlign: 'center', padding: '4px 6px', cursor: s.invoiceImage ? 'pointer' : 'default' }}
-                              onMouseEnter={s.invoiceImage ? ((e: { currentTarget: HTMLElement }) => {
-                                const rect = e.currentTarget.getBoundingClientRect();
-                                setInvoicePopover({ x: rect.left + rect.width / 2, y: rect.top, src: s.invoiceImage!, date: s.sessionDate });
-                              }) : undefined}
-                              onMouseLeave={() => setInvoicePopover(null)}
+                              onClick={s.invoiceImage ? () => setInvoiceModal({ src: s.invoiceImage!, date: s.sessionDate }) : undefined}
                             >
                               {s.invoiceImage
                                 ? <span style={{ fontSize: 16 }}>🧾</span>
@@ -2325,42 +2345,9 @@ function PaymentScreen({ onBack, tournamentPlayers }: { onBack: () => void; tour
                           ))
                         )}
                         {showWeekSub && weeks.map(([wk]) => <td key={`inv-wk-${wk}`} style={cellStyle} />)}
-                        {showGrandTotal && <td style={{ ...cellStyle, borderRight: 'none' }} />}
+                        {showGrandTotal && <td style={{ ...cellStyle }} />}
+                        {summaryMode === 'monthly' && <td style={{ ...cellStyle, borderRight: 'none' }} />}
                       </tr>
-
-                      {/* ── Paid row — one checkbox per player per day ── */}
-                      {allNames.map(name => (
-                        <tr key={`paid-${name}`}>
-                          <td style={{ ...stickyNameStyle, fontSize: 11, color: 'var(--text3)', fontWeight: 400 }}>
-                            ✅ {name} paid
-                          </td>
-                          {weeks.map(([, wSessions]) =>
-                            wSessions.map((s: CourtSessionDoc) => {
-                              const p = s.players.find(pl => pl.name === name);
-                              if (!p) return (
-                                <td key={`paid-${s.sessionDate}-${name}`} style={{ ...cellStyle, textAlign: 'center', padding: '4px 6px' }}>
-                                  <span style={{ color: 'var(--text3)', fontSize: 12 }}>—</span>
-                                </td>
-                              );
-                              return (
-                                <td key={`paid-${s.sessionDate}-${name}`} style={{ ...cellStyle, textAlign: 'center', padding: '4px 6px' }}>
-                                  <input
-                                    type="checkbox"
-                                    checked={p.paid ?? false}
-                                    title={p.paid ? 'Paid' : 'Not paid'}
-                                    style={{ width: 15, height: 15, cursor: 'pointer', accentColor: 'var(--success)' }}
-                                    onChange={(e: { target: HTMLInputElement }) =>
-                                      togglePaid(String(s._id), name, e.target.checked)
-                                    }
-                                  />
-                                </td>
-                              );
-                            })
-                          )}
-                          {showWeekSub && weeks.map(([wk]) => <td key={`paid-wk-${wk}-${name}`} style={cellStyle} />)}
-                          {showGrandTotal && <td style={{ ...cellStyle, borderRight: 'none' }} />}
-                        </tr>
-                      ))}
 
                       {/* ── Actions row ── */}
                       <tr>
@@ -2424,20 +2411,21 @@ function PaymentScreen({ onBack, tournamentPlayers }: { onBack: () => void; tour
         </div>
       )}
 
-      {/* ── Invoice image hover popover ── */}
-      {invoicePopover && (() => {
-        const above = invoicePopover.y > window.innerHeight / 2;
-        return (
-          <div className="invoice-popover" style={{
-            left: Math.min(Math.max(invoicePopover.x - 138, 8), window.innerWidth - 284),
-            top: above ? invoicePopover.y - 12 : invoicePopover.y + 32,
-            transform: above ? 'translateY(-100%)' : 'translateY(0)',
-          }}>
-            <div className="invoice-popover-label">🧾 Invoice · {invoicePopover.date}</div>
-            <img src={invoicePopover.src} alt="Invoice" />
+      {/* ── Invoice image modal ── */}
+      {invoiceModal && (
+        <div
+          style={{ position: 'fixed', inset: 0, zIndex: 200, background: 'rgba(0,0,0,.8)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+          onClick={() => setInvoiceModal(null)}
+        >
+          <div style={{ position: 'relative', maxWidth: '90vw', maxHeight: '90vh' }} onClick={(e: { stopPropagation: () => void }) => e.stopPropagation()}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+              <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text2)' }}>🧾 Invoice · {invoiceModal.date}</span>
+              <button onClick={() => setInvoiceModal(null)} style={{ background: 'rgba(255,255,255,.1)', border: 'none', color: '#fff', borderRadius: 8, padding: '4px 10px', cursor: 'pointer', fontSize: 16, fontWeight: 700, marginLeft: 16 }}>✕</button>
+            </div>
+            <img src={invoiceModal.src} alt="Invoice" style={{ display: 'block', maxWidth: '90vw', maxHeight: '80vh', borderRadius: 10, objectFit: 'contain' }} />
           </div>
-        );
-      })()}
+        </div>
+      )}
 
       {/* ═══════════ EDIT SESSION MODAL ═══════════ */}
       {editingSession && (
