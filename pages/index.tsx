@@ -1577,6 +1577,148 @@ function PaymentScreen({ onBack, tournamentPlayers }: { onBack: () => void; tour
   const [addSaving,       setAddSaving]       = useState(false);
   const [addResult,       setAddResult]       = useState<string | null>(null);
 
+  /* ── Scan Invoice state ── */
+  interface ScanExtraItem { name: string; price: number }
+  interface ScanResult {
+    courtFee: number | null;
+    numShuttlecocks: number | null;
+    shuttlecockUnitPrice: number | null;
+    shuttlecockTotal: number | null;
+    extraItems: ScanExtraItem[];
+    rawText: string;
+  }
+  type AddMode = 'choose' | 'manual' | 'scan' | 'preview';
+  const [addMode,         setAddMode]         = useState<AddMode>('choose');
+  const [scanLoading,     setScanLoading]     = useState(false);
+  const [scanError,       setScanError]       = useState<string | null>(null);
+  const [scanImageUrl,    setScanImageUrl]    = useState<string | null>(null);
+  // scan preview form state (populated from scan OR cleared for manual)
+  const [scanPrevDate,     setScanPrevDate]     = useState(() => new Date().toISOString().slice(0, 10));
+  const [scanPrevCourtFee, setScanPrevCourtFee] = useState('');
+  const [scanPrevNumShut,  setScanPrevNumShut]  = useState('');
+  const [scanPrevUnitPr,   setScanPrevUnitPr]   = useState('');
+  const [scanPrevNote,     setScanPrevNote]     = useState('');
+  const [scanPrevHighlight,setScanPrevHighlight]= useState(false);
+  const [scanPrevHlNote,   setScanPrevHlNote]   = useState('');
+  const [scanPrevSelected, setScanPrevSelected] = useState<Record<string, boolean>>(() =>
+    Object.fromEntries(tournamentPlayers.map(n => [n, true]))
+  );
+  const [scanPrevRawText,  setScanPrevRawText]  = useState('');
+  const [scanPrevRawOpen,  setScanPrevRawOpen]  = useState(false);
+  const [scanPrevSaving,   setScanPrevSaving]   = useState(false);
+  const [scanPrevResult,   setScanPrevResult]   = useState<string | null>(null);
+
+  async function handleScanImage(dataUrl: string) {
+    setScanImageUrl(dataUrl);
+    setScanLoading(true);
+    setScanError(null);
+    setAddMode('scan');
+    try {
+      const r = await fetch('/api/payment/invoice/extract', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ image: dataUrl }),
+      });
+      const data: ScanResult & { error?: string } = await r.json();
+      if (!r.ok) { setScanError(data.error ?? 'Extraction failed'); setScanLoading(false); return; }
+
+      // Populate preview form from extraction result
+      setScanPrevCourtFee(data.courtFee != null ? String(data.courtFee) : '');
+      // If we have count + unit price use them; if only total, derive unit price as total/count or leave unit blank
+      if (data.numShuttlecocks != null && data.shuttlecockUnitPrice != null) {
+        setScanPrevNumShut(String(data.numShuttlecocks));
+        setScanPrevUnitPr(String(data.shuttlecockUnitPrice));
+      } else if (data.numShuttlecocks != null && data.shuttlecockTotal != null) {
+        setScanPrevNumShut(String(data.numShuttlecocks));
+        setScanPrevUnitPr(String(Math.round(data.shuttlecockTotal / data.numShuttlecocks)));
+      } else if (data.shuttlecockTotal != null) {
+        // Only total known — put count=1, unit=total as a placeholder
+        setScanPrevNumShut('1');
+        setScanPrevUnitPr(String(data.shuttlecockTotal));
+      } else {
+        setScanPrevNumShut('');
+        setScanPrevUnitPr('');
+      }
+      setScanPrevDate(new Date().toISOString().slice(0, 10));
+      setScanPrevNote('');
+      setScanPrevRawText(data.rawText ?? '');
+      setScanPrevRawOpen(false);
+      setScanPrevResult(null);
+      // Extra items → highlight
+      if (data.extraItems && data.extraItems.length > 0) {
+        setScanPrevHighlight(true);
+        setScanPrevHlNote(data.extraItems.map((it: ScanExtraItem) => `${it.name}: ${it.price.toLocaleString()}đ`).join(', '));
+      } else {
+        setScanPrevHighlight(false);
+        setScanPrevHlNote('');
+      }
+      setScanPrevSelected(Object.fromEntries(tournamentPlayers.map(n => [n, true])));
+      setScanLoading(false);
+      setAddMode('preview');
+    } catch (e: unknown) {
+      setScanError(e instanceof Error ? e.message : 'Network error');
+      setScanLoading(false);
+    }
+  }
+
+  function openManual() {
+    setScanPrevDate(new Date().toISOString().slice(0, 10));
+    setScanPrevCourtFee('');
+    setScanPrevNumShut('');
+    setScanPrevUnitPr('');
+    setScanPrevNote('');
+    setScanPrevHighlight(false);
+    setScanPrevHlNote('');
+    setScanPrevSelected(Object.fromEntries(tournamentPlayers.map(n => [n, true])));
+    setScanPrevRawText('');
+    setScanPrevRawOpen(false);
+    setScanPrevResult(null);
+    setScanImageUrl(null);
+    setAddMode('preview');
+  }
+
+  async function submitPreview() {
+    const courtNum = parseFloat(scanPrevCourtFee) || 0;
+    const shutNum  = parseFloat(scanPrevNumShut)  || 0;
+    const unitNum  = parseFloat(scanPrevUnitPr)   || 0;
+    const players  = Array.from(new Set([...tournamentPlayers, ...allDbPlayers])).filter((n: string) => scanPrevSelected[n]);
+    if (!scanPrevDate || players.length === 0) return;
+    setScanPrevSaving(true);
+    setScanPrevResult(null);
+    const row: ImportRow = {
+      date:                 scanPrevDate,
+      players,
+      courtFee:             courtNum,
+      numShuttlecocks:      shutNum,
+      shuttlecockUnitPrice: unitNum,
+      note:                 scanPrevNote.trim() || undefined,
+    };
+    const r = await fetch('/api/payment/sessions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify([row]),
+    });
+    const data = await r.json();
+    if (!r.ok) { setScanPrevSaving(false); setScanPrevResult(`❌ ${data.error}`); return; }
+
+    // If we have an image or highlight, patch the just-created session
+    const sessionId = String(data.sessions?.[0]?._id);
+    if (sessionId && (scanImageUrl || scanPrevHighlight)) {
+      const patch: Record<string, unknown> = {};
+      if (scanImageUrl) patch.invoiceImages = [scanImageUrl];
+      if (scanPrevHighlight) { patch.highlight = true; patch.highlightNote = scanPrevHlNote; }
+      await fetch(`/api/payment/sessions/${sessionId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(patch),
+      });
+    }
+
+    setScanPrevSaving(false);
+    setScanPrevResult('✅ Session saved!');
+    setTimeout(() => { setAddMode('choose'); setScanImageUrl(null); }, 1200);
+  }
+
   // live cost preview for the Add form
   const addCourtNum   = parseFloat(addCourtFee)  || 0;
   const addShutNum    = parseFloat(addNumShut)    || 0;
@@ -1865,173 +2007,336 @@ function PaymentScreen({ onBack, tournamentPlayers }: { onBack: () => void; tour
       {/* ═══════════════ ADD SESSION TAB ═══════════════ */}
       {tab === 'add' && (
         <div>
-          <Card>
-            <CardTitle>➕ New Session</CardTitle>
-            <p style={{ fontSize: 13, color: 'var(--text2)', marginBottom: 16, lineHeight: 1.6 }}>
-              Record today's court cost for the current tournament players.
-            </p>
 
-            {/* Date + Note row */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 14 }}>
-              <div>
-                <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text2)', display: 'block', marginBottom: 4 }}>📅 Date</label>
-                <input type="date" className="input" style={{ width: '100%' }} value={addDate} onChange={e => setAddDate(e.target.value)} />
+          {/* ── CHOOSE mode: pick manual or scan ── */}
+          {addMode === 'choose' && (
+            <Card>
+              <CardTitle>➕ New Session</CardTitle>
+              <p style={{ fontSize: 13, color: 'var(--text2)', marginBottom: 20, lineHeight: 1.6 }}>
+                How would you like to add this session?
+              </p>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                <button
+                  onClick={openManual}
+                  style={{ background: 'var(--bg3)', border: '2px solid var(--border)', borderRadius: 14, padding: '20px 12px', cursor: 'pointer', textAlign: 'center' }}
+                >
+                  <div style={{ fontSize: 32, marginBottom: 8 }}>✏️</div>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text)' }}>Manual</div>
+                  <div style={{ fontSize: 12, color: 'var(--text3)', marginTop: 4 }}>Type in the numbers</div>
+                </button>
+                <label
+                  style={{ background: 'var(--bg3)', border: '2px solid var(--accent2)', borderRadius: 14, padding: '20px 12px', cursor: 'pointer', textAlign: 'center', display: 'block' }}
+                >
+                  <input
+                    type="file" accept="image/*" capture="environment" style={{ display: 'none' }}
+                    onChange={(e: { target: HTMLInputElement }) => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+                      const reader = new FileReader();
+                      reader.onload = ev => handleScanImage(ev.target?.result as string);
+                      reader.readAsDataURL(file);
+                    }}
+                  />
+                  <div style={{ fontSize: 32, marginBottom: 8 }}>📷</div>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--accent2)' }}>Scan Invoice</div>
+                  <div style={{ fontSize: 12, color: 'var(--text3)', marginTop: 4 }}>Take a photo to extract</div>
+                </label>
               </div>
-              <div>
-                <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text2)', display: 'block', marginBottom: 4 }}>📝 Note (optional)</label>
-                <input type="text" className="input" style={{ width: '100%' }} placeholder="e.g. Saturday court 3" value={addNote} onChange={e => setAddNote(e.target.value)} />
-              </div>
-            </div>
+            </Card>
+          )}
 
-            {/* Cost fields */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12, marginBottom: 14 }}>
-              <div>
-                <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text2)', display: 'block', marginBottom: 4 }}>🏟 Court Fee (₫)</label>
-                <input
-                  type="number" min={0} className="input" style={{ width: '100%' }}
-                  placeholder="e.g. 300000"
-                  value={addCourtFee}
-                  onChange={e => setAddCourtFee(e.target.value)}
-                />
+          {/* ── SCAN loading state ── */}
+          {addMode === 'scan' && (
+            <Card>
+              <div style={{ textAlign: 'center', padding: '32px 0' }}>
+                {scanLoading && (
+                  <>
+                    {scanImageUrl && <img src={scanImageUrl} alt="Invoice" style={{ maxWidth: '100%', maxHeight: 200, borderRadius: 10, objectFit: 'contain', marginBottom: 16 }} />}
+                    <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--text2)' }}>⏳ Extracting invoice data…</div>
+                    <div style={{ fontSize: 12, color: 'var(--text3)', marginTop: 6 }}>Reading Vietnamese invoice with AI</div>
+                  </>
+                )}
+                {scanError && (
+                  <>
+                    <div style={{ fontSize: 14, color: 'var(--danger)', marginBottom: 16 }}>❌ {scanError}</div>
+                    <Btn variant="secondary" size="sm" onClick={() => setAddMode('choose')}>← Try Again</Btn>
+                  </>
+                )}
               </div>
-              <div>
-                <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text2)', display: 'block', marginBottom: 4 }}>🏸 Shuttlecocks used</label>
-                <input
-                  type="number" min={0} className="input" style={{ width: '100%' }}
-                  placeholder="e.g. 3"
-                  value={addNumShut}
-                  onChange={e => setAddNumShut(e.target.value)}
-                />
-              </div>
-              <div>
-                <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text2)', display: 'block', marginBottom: 4 }}>💲 Price / shuttlecock (₫)</label>
-                <input
-                  type="number" min={0} className="input" style={{ width: '100%' }}
-                  placeholder="e.g. 15000"
-                  value={addUnitPrice}
-                  onChange={e => setAddUnitPrice(e.target.value)}
-                />
-              </div>
-            </div>
+            </Card>
+          )}
 
-            {/* Cost preview */}
-            {addTotal > 0 && (
-              <div style={{ background: 'var(--bg3)', borderRadius: 10, padding: '10px 14px', marginBottom: 16, display: 'flex', gap: 20, flexWrap: 'wrap', alignItems: 'center' }}>
-                <span style={{ fontSize: 13, color: 'var(--text2)' }}>Court: <strong>{formatVND(addCourtNum)}</strong></span>
-                <span style={{ fontSize: 13, color: 'var(--text2)' }}>Shuttles: <strong>{formatVND(addShutTotal)}</strong></span>
-                <span style={{ marginLeft: 'auto', fontSize: 16, fontWeight: 900, color: 'var(--accent)' }}>Total: {formatVND(addTotal)}</span>
-              </div>
-            )}
-
-            {/* Player selection */}
-            <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text2)', display: 'block', marginBottom: 8 }}>
-              👥 Players in this session ({addPlayers.length} selected)
-            </label>
-
-            {/* Section 1: Tournament players */}
-            {tournamentPlayers.length > 0 && (
-              <>
-                <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6 }}>
-                  🏸 Today&apos;s players (tournament)
+          {/* ── PREVIEW / MANUAL ENTRY form ── */}
+          {addMode === 'preview' && (() => {
+            const courtNum  = parseFloat(scanPrevCourtFee) || 0;
+            const shutNum   = parseFloat(scanPrevNumShut)  || 0;
+            const unitNum   = parseFloat(scanPrevUnitPr)   || 0;
+            const shutTotal = shutNum * unitNum;
+            const total     = courtNum + shutTotal;
+            const players   = Array.from(new Set([...tournamentPlayers, ...allDbPlayers])).filter((n: string) => scanPrevSelected[n]);
+            return (
+              <Card>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+                  <button onClick={() => setAddMode('choose')} style={{ background: 'none', border: 'none', color: 'var(--text3)', fontSize: 20, cursor: 'pointer', padding: 0, lineHeight: 1 }}>←</button>
+                  <CardTitle style={{ margin: 0 }}>{scanImageUrl ? '📷 Review Scanned Invoice' : '✏️ New Session'}</CardTitle>
                 </div>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
-                  {tournamentPlayers.map(name => {
-                    const on = addSelected[name] ?? true;
-                    return (
-                      <button
-                        key={name}
-                        onClick={() => setAddSelected((prev: Record<string, boolean>) => ({ ...prev, [name]: !prev[name] }))}
-                        style={{
-                          padding: '5px 12px', borderRadius: 20, fontSize: 13, fontWeight: 600, cursor: 'pointer',
-                          border: `2px solid ${on ? 'var(--accent)' : 'var(--border)'}`,
-                          background: on ? 'rgba(57,255,20,.12)' : 'var(--bg3)',
-                          color: on ? 'var(--accent)' : 'var(--text3)',
-                          transition: 'all .15s',
-                        }}
-                      >
-                        {on ? '✓ ' : ''}{name}
-                      </button>
-                    );
-                  })}
-                </div>
-              </>
-            )}
 
-            {/* Section 2: All other DB players not in tournament */}
-            {(() => {
-              const tournSet = new Set(tournamentPlayers);
-              const extras = allDbPlayers.filter((n: string) => !tournSet.has(n));
-              if (extras.length === 0) return null;
-              return (
-                <>
-                  <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6 }}>
-                    👤 All players
+                {/* Scanned image thumbnail */}
+                {scanImageUrl && (
+                  <div style={{ marginBottom: 14 }}>
+                    <img src={scanImageUrl} alt="Invoice" style={{ maxWidth: '100%', maxHeight: 160, borderRadius: 10, objectFit: 'contain', border: '1px solid var(--border)' }} />
                   </div>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 16 }}>
-                    {extras.map(name => {
-                      const on = addSelected[name] ?? false;
+                )}
+
+                {/* Highlight banner if extra items detected */}
+                {scanPrevHighlight && (
+                  <div style={{ background: 'rgba(220,38,38,.1)', border: '1px solid rgba(220,38,38,.4)', borderRadius: 10, padding: '10px 14px', marginBottom: 14 }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: '#f87171', marginBottom: 4 }}>⚠ Extra items detected — session will be highlighted</div>
+                    <input
+                      className="input" style={{ width: '100%', fontSize: 12 }}
+                      value={scanPrevHlNote}
+                      onChange={e => setScanPrevHlNote(e.target.value)}
+                      placeholder="Edit highlight note…"
+                    />
+                    <button onClick={() => { setScanPrevHighlight(false); setScanPrevHlNote(''); }} style={{ background: 'none', border: 'none', color: 'var(--text3)', fontSize: 11, cursor: 'pointer', marginTop: 4 }}>✕ Remove highlight</button>
+                  </div>
+                )}
+
+                {/* Date + Note */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 14 }}>
+                  <div>
+                    <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text2)', display: 'block', marginBottom: 4 }}>📅 Date</label>
+                    <input type="date" className="input" style={{ width: '100%' }} value={scanPrevDate} onChange={e => setScanPrevDate(e.target.value)} />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text2)', display: 'block', marginBottom: 4 }}>📝 Note (optional)</label>
+                    <input type="text" className="input" style={{ width: '100%' }} placeholder="e.g. Saturday court 3" value={scanPrevNote} onChange={e => setScanPrevNote(e.target.value)} />
+                  </div>
+                </div>
+
+                {/* Cost fields */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12, marginBottom: 14 }}>
+                  <div>
+                    <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text2)', display: 'block', marginBottom: 4 }}>🏟 Court Fee (₫)</label>
+                    <input type="number" min={0} className="input" style={{ width: '100%' }} placeholder="e.g. 300000" value={scanPrevCourtFee} onChange={e => setScanPrevCourtFee(e.target.value)} />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text2)', display: 'block', marginBottom: 4 }}>🏸 Shuttlecocks</label>
+                    <input type="number" min={0} className="input" style={{ width: '100%' }} placeholder="e.g. 3" value={scanPrevNumShut} onChange={e => setScanPrevNumShut(e.target.value)} />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text2)', display: 'block', marginBottom: 4 }}>💲 Price / shuttlecock (₫)</label>
+                    <input type="number" min={0} className="input" style={{ width: '100%' }} placeholder="e.g. 15000" value={scanPrevUnitPr} onChange={e => setScanPrevUnitPr(e.target.value)} />
+                  </div>
+                </div>
+
+                {/* Cost summary */}
+                {total > 0 && (
+                  <div style={{ background: 'var(--bg3)', borderRadius: 10, padding: '10px 14px', marginBottom: 16, display: 'flex', gap: 20, flexWrap: 'wrap', alignItems: 'center' }}>
+                    <span style={{ fontSize: 13, color: 'var(--text2)' }}>Court: <strong>{formatVND(courtNum)}</strong></span>
+                    <span style={{ fontSize: 13, color: 'var(--text2)' }}>Shuttles: <strong>{formatVND(shutTotal)}</strong></span>
+                    <span style={{ marginLeft: 'auto', fontSize: 16, fontWeight: 900, color: 'var(--accent)' }}>Total: {formatVND(total)}</span>
+                  </div>
+                )}
+
+                {/* Player selection */}
+                <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text2)', display: 'block', marginBottom: 8 }}>
+                  👥 Players ({players.length} selected)
+                </label>
+                {tournamentPlayers.length > 0 && (
+                  <>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6 }}>🏸 Tournament players</div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
+                      {tournamentPlayers.map(name => {
+                        const on = scanPrevSelected[name] ?? true;
+                        return (
+                          <button key={name}
+                            onClick={() => setScanPrevSelected((prev: Record<string, boolean>) => ({ ...prev, [name]: !prev[name] }))}
+                            style={{ padding: '5px 12px', borderRadius: 20, fontSize: 13, fontWeight: 600, cursor: 'pointer', border: `2px solid ${on ? 'var(--accent)' : 'var(--border)'}`, background: on ? 'rgba(57,255,20,.12)' : 'var(--bg3)', color: on ? 'var(--accent)' : 'var(--text3)' }}
+                          >{on ? '✓ ' : ''}{name}</button>
+                        );
+                      })}
+                    </div>
+                  </>
+                )}
+                {(() => {
+                  const tournSet = new Set(tournamentPlayers);
+                  const extras = allDbPlayers.filter((n: string) => !tournSet.has(n));
+                  if (extras.length === 0) return null;
+                  return (
+                    <>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6 }}>👤 All players</div>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 16 }}>
+                        {extras.map(name => {
+                          const on = scanPrevSelected[name] ?? false;
+                          return (
+                            <button key={name}
+                              onClick={() => setScanPrevSelected((prev: Record<string, boolean>) => ({ ...prev, [name]: !prev[name] }))}
+                              style={{ padding: '5px 12px', borderRadius: 20, fontSize: 13, fontWeight: 600, cursor: 'pointer', border: `2px solid ${on ? 'var(--accent2)' : 'var(--border)'}`, background: on ? 'rgba(168,85,247,.12)' : 'var(--bg3)', color: on ? 'var(--accent2)' : 'var(--text3)' }}
+                            >{on ? '✓ ' : ''}{name}</button>
+                          );
+                        })}
+                      </div>
+                    </>
+                  );
+                })()}
+
+                {/* Per-player split preview */}
+                {total > 0 && players.length > 0 && (
+                  <div style={{ marginBottom: 16 }}>
+                    <p style={{ fontSize: 12, fontWeight: 600, color: 'var(--text3)', marginBottom: 8, textTransform: 'uppercase', letterSpacing: 1 }}>Estimated share per player</p>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 6 }}>
+                      {players.map(name => {
+                        const est = (courtNum + shutTotal) / players.length;
+                        return (
+                          <div key={name} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'var(--bg3)', borderRadius: 8, padding: '6px 10px' }}>
+                            <span style={{ fontSize: 13, fontWeight: 600 }}>{name}</span>
+                            <span style={{ fontSize: 13, fontWeight: 800, color: 'var(--accent2)' }}>~{formatVND(Math.round(est / 1000) * 1000)}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <p style={{ fontSize: 11, color: 'var(--text3)', marginTop: 6 }}>* Preview uses equal split. Actual amounts apply saved smash weights.</p>
+                  </div>
+                )}
+
+                {/* Raw OCR text (collapsible) */}
+                {scanPrevRawText && (
+                  <div style={{ marginBottom: 14 }}>
+                    <button
+                      onClick={() => setScanPrevRawOpen(o => !o)}
+                      style={{ background: 'none', border: 'none', fontSize: 12, color: 'var(--text3)', cursor: 'pointer', padding: 0, marginBottom: 4 }}
+                    >{scanPrevRawOpen ? '▾' : '▸'} Raw OCR text (for verification)</button>
+                    {scanPrevRawOpen && (
+                      <pre style={{ fontSize: 11, color: 'var(--text3)', background: 'var(--bg3)', borderRadius: 8, padding: '10px 12px', whiteSpace: 'pre-wrap', wordBreak: 'break-word', margin: 0 }}>
+                        {scanPrevRawText}
+                      </pre>
+                    )}
+                  </div>
+                )}
+
+                {scanPrevResult && (
+                  <p style={{ fontSize: 13, fontWeight: 700, color: scanPrevResult.startsWith('✅') ? 'var(--success)' : 'var(--danger)', marginBottom: 12 }}>
+                    {scanPrevResult}
+                  </p>
+                )}
+
+                <Btn
+                  variant="primary" size="lg"
+                  disabled={scanPrevSaving || players.length === 0 || !scanPrevDate || scanPrevCourtFee === ''}
+                  onClick={submitPreview}
+                >
+                  {scanPrevSaving ? '⏳ Saving…' : '💾 Save Session'}
+                </Btn>
+              </Card>
+            );
+          })()}
+
+          {/* ── Legacy manual form (kept for add tab direct access) ── */}
+          {addMode === 'manual' && (
+            <Card>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+                <button onClick={() => setAddMode('choose')} style={{ background: 'none', border: 'none', color: 'var(--text3)', fontSize: 20, cursor: 'pointer', padding: 0, lineHeight: 1 }}>←</button>
+                <CardTitle style={{ margin: 0 }}>✏️ New Session</CardTitle>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 14 }}>
+                <div>
+                  <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text2)', display: 'block', marginBottom: 4 }}>📅 Date</label>
+                  <input type="date" className="input" style={{ width: '100%' }} value={addDate} onChange={e => setAddDate(e.target.value)} />
+                </div>
+                <div>
+                  <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text2)', display: 'block', marginBottom: 4 }}>📝 Note (optional)</label>
+                  <input type="text" className="input" style={{ width: '100%' }} placeholder="e.g. Saturday court 3" value={addNote} onChange={e => setAddNote(e.target.value)} />
+                </div>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12, marginBottom: 14 }}>
+                <div>
+                  <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text2)', display: 'block', marginBottom: 4 }}>🏟 Court Fee (₫)</label>
+                  <input type="number" min={0} className="input" style={{ width: '100%' }} placeholder="e.g. 300000" value={addCourtFee} onChange={e => setAddCourtFee(e.target.value)} />
+                </div>
+                <div>
+                  <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text2)', display: 'block', marginBottom: 4 }}>🏸 Shuttlecocks used</label>
+                  <input type="number" min={0} className="input" style={{ width: '100%' }} placeholder="e.g. 3" value={addNumShut} onChange={e => setAddNumShut(e.target.value)} />
+                </div>
+                <div>
+                  <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text2)', display: 'block', marginBottom: 4 }}>💲 Price / shuttlecock (₫)</label>
+                  <input type="number" min={0} className="input" style={{ width: '100%' }} placeholder="e.g. 15000" value={addUnitPrice} onChange={e => setAddUnitPrice(e.target.value)} />
+                </div>
+              </div>
+              {addTotal > 0 && (
+                <div style={{ background: 'var(--bg3)', borderRadius: 10, padding: '10px 14px', marginBottom: 16, display: 'flex', gap: 20, flexWrap: 'wrap', alignItems: 'center' }}>
+                  <span style={{ fontSize: 13, color: 'var(--text2)' }}>Court: <strong>{formatVND(addCourtNum)}</strong></span>
+                  <span style={{ fontSize: 13, color: 'var(--text2)' }}>Shuttles: <strong>{formatVND(addShutTotal)}</strong></span>
+                  <span style={{ marginLeft: 'auto', fontSize: 16, fontWeight: 900, color: 'var(--accent)' }}>Total: {formatVND(addTotal)}</span>
+                </div>
+              )}
+              <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text2)', display: 'block', marginBottom: 8 }}>👥 Players in this session ({addPlayers.length} selected)</label>
+              {tournamentPlayers.length > 0 && (
+                <>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6 }}>🏸 Today&apos;s players (tournament)</div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
+                    {tournamentPlayers.map(name => {
+                      const on = addSelected[name] ?? true;
                       return (
-                        <button
-                          key={name}
-                          onClick={() => setAddSelected((prev: Record<string, boolean>) => ({ ...prev, [name]: !prev[name] }))}
-                          style={{
-                            padding: '5px 12px', borderRadius: 20, fontSize: 13, fontWeight: 600, cursor: 'pointer',
-                            border: `2px solid ${on ? 'var(--accent2)' : 'var(--border)'}`,
-                            background: on ? 'rgba(168,85,247,.12)' : 'var(--bg3)',
-                            color: on ? 'var(--accent2)' : 'var(--text3)',
-                            transition: 'all .15s',
-                          }}
-                        >
-                          {on ? '✓ ' : ''}{name}
-                        </button>
+                        <button key={name} onClick={() => setAddSelected((prev: Record<string, boolean>) => ({ ...prev, [name]: !prev[name] }))}
+                          style={{ padding: '5px 12px', borderRadius: 20, fontSize: 13, fontWeight: 600, cursor: 'pointer', border: `2px solid ${on ? 'var(--accent)' : 'var(--border)'}`, background: on ? 'rgba(57,255,20,.12)' : 'var(--bg3)', color: on ? 'var(--accent)' : 'var(--text3)', transition: 'all .15s' }}
+                        >{on ? '✓ ' : ''}{name}</button>
                       );
                     })}
                   </div>
                 </>
-              );
-            })()}
-
-            {/* Per-player preview when all fields filled */}
-            {addTotal > 0 && addPlayers.length > 0 && (
-              <div style={{ marginBottom: 16 }}>
-                <p style={{ fontSize: 12, fontWeight: 600, color: 'var(--text3)', marginBottom: 8, textTransform: 'uppercase', letterSpacing: 1 }}>
-                  Estimated share per player
-                </p>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 6 }}>
-                  {addPlayers.map(name => {
-                    const courtShare   = addCourtNum / addPlayers.length;
-                    // smash weights are unknown at this point (not loaded); show equal split preview
-                    const shutShare    = addShutTotal / addPlayers.length;
-                    const est          = courtShare + shutShare;
-                    return (
-                      <div key={name} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'var(--bg3)', borderRadius: 8, padding: '6px 10px' }}>
-                        <span style={{ fontSize: 13, fontWeight: 600 }}>{name}</span>
-                        <span style={{ fontSize: 13, fontWeight: 800, color: 'var(--accent2)' }}>~{formatVND(Math.round(est / 1000) * 1000)}</span>
-                      </div>
-                    );
-                  })}
+              )}
+              {(() => {
+                const tournSet = new Set(tournamentPlayers);
+                const extras = allDbPlayers.filter((n: string) => !tournSet.has(n));
+                if (extras.length === 0) return null;
+                return (
+                  <>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6 }}>👤 All players</div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 16 }}>
+                      {extras.map(name => {
+                        const on = addSelected[name] ?? false;
+                        return (
+                          <button key={name} onClick={() => setAddSelected((prev: Record<string, boolean>) => ({ ...prev, [name]: !prev[name] }))}
+                            style={{ padding: '5px 12px', borderRadius: 20, fontSize: 13, fontWeight: 600, cursor: 'pointer', border: `2px solid ${on ? 'var(--accent2)' : 'var(--border)'}`, background: on ? 'rgba(168,85,247,.12)' : 'var(--bg3)', color: on ? 'var(--accent2)' : 'var(--text3)', transition: 'all .15s' }}
+                          >{on ? '✓ ' : ''}{name}</button>
+                        );
+                      })}
+                    </div>
+                  </>
+                );
+              })()}
+              {addTotal > 0 && addPlayers.length > 0 && (
+                <div style={{ marginBottom: 16 }}>
+                  <p style={{ fontSize: 12, fontWeight: 600, color: 'var(--text3)', marginBottom: 8, textTransform: 'uppercase', letterSpacing: 1 }}>Estimated share per player</p>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 6 }}>
+                    {addPlayers.map(name => {
+                      const est = (addCourtNum + addShutTotal) / addPlayers.length;
+                      return (
+                        <div key={name} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'var(--bg3)', borderRadius: 8, padding: '6px 10px' }}>
+                          <span style={{ fontSize: 13, fontWeight: 600 }}>{name}</span>
+                          <span style={{ fontSize: 13, fontWeight: 800, color: 'var(--accent2)' }}>~{formatVND(Math.round(est / 1000) * 1000)}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <p style={{ fontSize: 11, color: 'var(--text3)', marginTop: 6 }}>* Preview uses equal split. Actual amounts apply saved smash weights.</p>
                 </div>
-                <p style={{ fontSize: 11, color: 'var(--text3)', marginTop: 6 }}>
-                  * Preview uses equal split. Actual amounts apply saved smash weights.
+              )}
+              {addResult && (
+                <p style={{ fontSize: 13, fontWeight: 700, color: addResult.startsWith('✅') ? 'var(--success)' : 'var(--danger)', marginBottom: 12 }}>
+                  {addResult}
                 </p>
-              </div>
-            )}
+              )}
+              <Btn variant="primary" size="lg"
+                disabled={addSaving || addPlayers.length === 0 || !addDate || addCourtFee === '' || addNumShut === '' || addUnitPrice === ''}
+                onClick={submitAdd}
+              >
+                {addSaving ? '⏳ Saving…' : '💾 Save Session'}
+              </Btn>
+            </Card>
+          )}
 
-            {addResult && (
-              <p style={{ fontSize: 13, fontWeight: 700, color: addResult.startsWith('✅') ? 'var(--success)' : 'var(--danger)', marginBottom: 12 }}>
-                {addResult}
-              </p>
-            )}
-
-            <Btn
-              variant="primary"
-              size="lg"
-              disabled={addSaving || addPlayers.length === 0 || !addDate || addCourtFee === '' || addNumShut === '' || addUnitPrice === ''}
-              onClick={submitAdd}
-            >
-              {addSaving ? '⏳ Saving…' : '💾 Save Session'}
-            </Btn>
-          </Card>
         </div>
       )}
 
