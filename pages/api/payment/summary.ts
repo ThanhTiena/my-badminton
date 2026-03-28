@@ -69,12 +69,18 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     period = `${MONTH_NAMES[filter.month - 1]} ${filter.year}`;
   }
 
-  const sessions: CourtSessionDoc[] = await client
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const rawSessions: any[] = await client
     .db(DB)
     .collection<CourtSessionDoc>(COL)
-    .find(filter)
-    .sort({ sessionDate: 1 })
+    .aggregate([
+      { $match: filter },
+      { $sort: { sessionDate: 1 } },
+      { $addFields: { invoiceCount: { $size: { $ifNull: ['$invoiceImages', []] } } } },
+      { $project: { invoiceImages: 0 } },
+    ])
     .toArray();
+  const sessions: CourtSessionDoc[] = rawSessions;
 
   // Aggregate per-player totals
   const playerMap = new Map<string, { totalOwed: number; totalOwedRounded: number; sessionCount: number }>();

@@ -2337,11 +2337,15 @@ function PaymentScreen({ onBack, tournamentPlayers }: { onBack: () => void; tour
                           wSessions.map((s: CourtSessionDoc) => (
                             <td
                               key={`inv-${s.sessionDate}`}
-                              style={{ ...cellStyle, textAlign: 'center', padding: '4px 6px', cursor: (s.invoiceImages?.length) ? 'pointer' : 'default' }}
-                              onClick={(s.invoiceImages?.length) ? () => setInvoiceModal({ images: s.invoiceImages!, idx: 0, date: s.sessionDate }) : undefined}
+                              style={{ ...cellStyle, textAlign: 'center', padding: '4px 6px', cursor: (s.invoiceCount ?? 0) > 0 ? 'pointer' : 'default' }}
+                              onClick={(s.invoiceCount ?? 0) > 0 ? async () => {
+                                const r = await fetch(`/api/payment/sessions/${s._id}`);
+                                const doc: CourtSessionDoc = await r.json();
+                                setInvoiceModal({ images: doc.invoiceImages ?? [], idx: 0, date: s.sessionDate });
+                              } : undefined}
                             >
-                              {(s.invoiceImages?.length)
-                                ? <span style={{ fontSize: 16 }}>🧾{s.invoiceImages.length > 1 ? ` ×${s.invoiceImages.length}` : ''}</span>
+                              {(s.invoiceCount ?? 0) > 0
+                                ? <span style={{ fontSize: 16 }}>🧾{(s.invoiceCount ?? 0) > 1 ? ` ×${s.invoiceCount}` : ''}</span>
                                 : <span style={{ color: 'var(--text3)', fontSize: 12 }}>—</span>}
                             </td>
                           ))

@@ -52,6 +52,8 @@ export interface CourtSessionDoc {
   highlightNote?: string;
   /** Base64 data URLs of invoice images (e.g. ["data:image/jpeg;base64,..."]) */
   invoiceImages?: string[];
+  /** Count of invoice images — injected by summary API (invoiceImages excluded for performance) */
+  invoiceCount?: number;
   importedAt: Date;
 }
 

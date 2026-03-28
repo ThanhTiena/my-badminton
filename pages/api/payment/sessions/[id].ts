@@ -3,6 +3,8 @@
  * PATCH  /api/payment/sessions/[id]   — update a session (costs, players, note, highlight)
  * DELETE /api/payment/sessions/[id]   — remove a single session
  */
+export const config = { api: { bodyParser: { sizeLimit: '20mb' } } };
+
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { ObjectId } from 'mongodb';
 import client from '@/lib/mongodb';
