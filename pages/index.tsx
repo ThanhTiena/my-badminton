@@ -2311,32 +2311,24 @@ function PaymentScreen({ onBack, tournamentPlayers }: { onBack: () => void; tour
                         </tr>
                       )}
 
-                      {/* ── Week subtotal rows (one per week) ── */}
-                      {showWeekSub && weeks.map(([wk, wSessions]) => {
-                        const wCost = wSessions.reduce((acc: number, sess: CourtSessionDoc) => acc + sess.totalCost, 0);
-                        const prevSessionCount = weeks
-                          .filter(([w]) => w < wk)
-                          .reduce((acc: number, [, s]) => acc + s.length, 0);
-                        const afterSessionCount = summary.sessions.length - prevSessionCount - wSessions.length;
-                        return (
-                          <tr key={`wkrow-${wk}`}>
-                            <td style={{ ...stickyNameStyle, fontWeight: 700, color: 'var(--accent2)', background: 'rgba(168,85,247,.07)' }}>
-                              Week {wk} total
-                            </td>
-                            {prevSessionCount > 0 && (
-                              <td colSpan={prevSessionCount} style={{ ...weekStyle, background: 'rgba(168,85,247,.03)' }} />
-                            )}
-                            <td colSpan={wSessions.length} style={{ ...weekStyle, textAlign: 'center', fontWeight: 800, fontSize: 13 }}>
-                              {formatVND(wCost)}
-                            </td>
-                            {afterSessionCount > 0 && (
-                              <td colSpan={afterSessionCount} style={{ ...weekStyle, background: 'rgba(168,85,247,.03)' }} />
-                            )}
-                            {showGrandTotal && <td style={{ ...weekStyle, borderRight: 'none' }} />}
-                            {summaryMode === 'monthly' && <td style={{ ...weekStyle, borderRight: 'none' }} />}
-                          </tr>
-                        );
-                      })}
+                      {/* ── Week Total row — one cell per week group ── */}
+                      {showWeekSub && (
+                        <tr>
+                          <td style={{ ...stickyNameStyle, fontWeight: 700, color: 'var(--accent2)', background: 'rgba(168,85,247,.07)' }}>
+                            Week Total
+                          </td>
+                          {weeks.map(([wk, wSessions]) => {
+                            const wCost = wSessions.reduce((acc: number, sess: CourtSessionDoc) => acc + sess.totalCost, 0);
+                            return (
+                              <td key={`wktotal-${wk}`} colSpan={wSessions.length} style={{ ...weekStyle, textAlign: 'center', fontWeight: 800, fontSize: 13 }}>
+                                {formatVND(wCost)}
+                              </td>
+                            );
+                          })}
+                          {showGrandTotal && <td style={{ ...weekStyle, borderRight: 'none' }} />}
+                          {summaryMode === 'monthly' && <td style={{ ...weekStyle, borderRight: 'none' }} />}
+                        </tr>
+                      )}
 
                       {/* ── Invoice row ── */}
                       <tr>
