@@ -2199,11 +2199,35 @@ function PaymentScreen({ onBack, tournamentPlayers }: { onBack: () => void; tour
                   onMouseLeave={() => setPopover(null)}>
                   <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: 600 }}>
                     <thead>
-                      {/* ── Row 1: Month + week group headers ── */}
+                      {/* ── Row 1: Sticky name + Month spanning all session columns ── */}
                       <tr>
-                        <th rowSpan={2} style={{ ...headerStyle, textAlign: 'left', fontSize: 13, color: 'var(--text)', background: 'var(--bg3)', position: 'sticky', left: 0, zIndex: 3, minWidth: 140, verticalAlign: 'middle' }}>
+                        <th rowSpan={3} style={{ ...headerStyle, textAlign: 'left', fontSize: 13, color: 'var(--text)', background: 'var(--bg3)', position: 'sticky', left: 0, zIndex: 3, minWidth: 140, verticalAlign: 'middle' }}>
+                          Player
+                        </th>
+                        <th
+                          colSpan={summary.sessions.length}
+                          style={{ ...headerStyle, textAlign: 'center', fontSize: 13, color: 'var(--text)', background: 'var(--bg3)', borderBottom: '1px solid var(--border)', letterSpacing: 1 }}
+                        >
                           {summary.period}
                         </th>
+                        {showWeekSub && weeks.map(([wk]) => (
+                          <th key={`wksubhdr-${wk}`} rowSpan={3} style={{ ...headerStyle, color: 'var(--accent2)', minWidth: 90, textAlign: 'center', verticalAlign: 'middle' }}>
+                            Wk {wk} sub
+                          </th>
+                        ))}
+                        {showGrandTotal && (
+                          <th rowSpan={3} style={{ ...headerStyle, color: 'var(--accent)', fontSize: 12, minWidth: 100, textAlign: 'center', verticalAlign: 'middle' }}>
+                            Grand Total
+                          </th>
+                        )}
+                        {summaryMode === 'monthly' && (
+                          <th rowSpan={3} style={{ ...headerStyle, color: 'var(--success)', fontSize: 12, minWidth: 70, textAlign: 'center', borderRight: 'none', verticalAlign: 'middle' }}>
+                            Paid
+                          </th>
+                        )}
+                      </tr>
+                      {/* ── Row 2: Week group headers ── */}
+                      <tr>
                         {weeks.map(([wk, wSessions]) => (
                           <th
                             key={`wkhdr-${wk}`}
@@ -2213,23 +2237,8 @@ function PaymentScreen({ onBack, tournamentPlayers }: { onBack: () => void; tour
                             Week {wk}
                           </th>
                         ))}
-                        {showWeekSub && weeks.map(([wk]) => (
-                          <th key={`wksubhdr-${wk}`} rowSpan={2} style={{ ...headerStyle, color: 'var(--accent2)', minWidth: 90, textAlign: 'center', verticalAlign: 'middle' }}>
-                            Wk {wk} sub
-                          </th>
-                        ))}
-                        {showGrandTotal && (
-                          <th rowSpan={2} style={{ ...headerStyle, color: 'var(--accent)', fontSize: 12, minWidth: 100, textAlign: 'center', verticalAlign: 'middle' }}>
-                            Grand Total
-                          </th>
-                        )}
-                        {summaryMode === 'monthly' && (
-                          <th rowSpan={2} style={{ ...headerStyle, color: 'var(--success)', fontSize: 12, minWidth: 70, textAlign: 'center', borderRight: 'none', verticalAlign: 'middle' }}>
-                            Paid
-                          </th>
-                        )}
                       </tr>
-                      {/* ── Row 2: Individual session date headers ── */}
+                      {/* ── Row 3: Individual session date headers ── */}
                       <tr>
                         {weeks.map(([, wSessions]) =>
                           wSessions.map((s: CourtSessionDoc) => (
