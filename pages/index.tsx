@@ -1651,6 +1651,7 @@ function PaymentScreen({ onBack, tournamentPlayers = [] }: { onBack: () => void;
   /* ── Scan Invoice state ── */
   interface ScanExtraItem { name: string; price: number }
   interface ScanResult {
+    invoiceIndex?: number;
     courtFee: number | null;
     numShuttlecocks: number | null;
     shuttlecockUnitPrice: number | null;
@@ -1678,6 +1679,44 @@ function PaymentScreen({ onBack, tournamentPlayers = [] }: { onBack: () => void;
   const [scanPrevRawOpen,  setScanPrevRawOpen]  = useState(false);
   const [scanPrevSaving,   setScanPrevSaving]   = useState(false);
   const [scanPrevResult,   setScanPrevResult]   = useState<string | null>(null);
+  const [scanResults,      setScanResults]      = useState<ScanResult[]>([]);
+
+  function applyMergedResultsToForm(results: ScanResult[]) {
+    // Sum court fees across all invoices
+    const totalCourtFee = results.reduce((sum, d) => sum + (d.courtFee ?? 0), 0);
+
+    // Sum shuttlecock counts; compute average unit price
+    const totalShut = results.reduce((sum, d) => sum + (d.numShuttlecocks ?? 0), 0);
+    const totalShutCost = results.reduce((sum, d) => {
+      if (d.shuttlecockTotal != null) return sum + d.shuttlecockTotal;
+      if (d.numShuttlecocks != null && d.shuttlecockUnitPrice != null) return sum + d.numShuttlecocks * d.shuttlecockUnitPrice;
+      return sum;
+    }, 0);
+    const avgUnitPrice = totalShut > 0 ? Math.round(totalShutCost / totalShut) : 0;
+
+    // Merge extra items from all invoices
+    const allExtra: ScanExtraItem[] = results.flatMap(d => d.extraItems ?? []);
+    const allRaw = results.map((d, i) =>
+      results.length > 1 ? `[Invoice ${i + 1}]\n${d.rawText}` : d.rawText
+    ).join('\n\n');
+
+    setScanPrevCourtFee(totalCourtFee > 0 ? String(totalCourtFee) : '');
+    setScanPrevNumShut(totalShut > 0 ? String(totalShut) : '');
+    setScanPrevUnitPr(avgUnitPrice > 0 ? String(avgUnitPrice) : '');
+    setScanPrevDate(new Date().toISOString().slice(0, 10));
+    setScanPrevNote('');
+    setScanPrevRawText(allRaw);
+    setScanPrevRawOpen(false);
+    setScanPrevResult(null);
+    if (allExtra.length > 0) {
+      setScanPrevHighlight(true);
+      setScanPrevHlNote(allExtra.map((it: ScanExtraItem) => `${it.name}: ${it.price.toLocaleString()}đ`).join(', '));
+    } else {
+      setScanPrevHighlight(false);
+      setScanPrevHlNote('');
+    }
+    setScanPrevSelected(Object.fromEntries(tournamentPlayers.map(n => [n, true])));
+  }
 
   async function handleScanImage(dataUrl: string) {
     setScanImageUrl(dataUrl);
@@ -1690,40 +1729,15 @@ function PaymentScreen({ onBack, tournamentPlayers = [] }: { onBack: () => void;
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ image: dataUrl }),
       });
-      const data: ScanResult & { error?: string } = await r.json();
-      if (!r.ok) { setScanError(data.error ?? 'Extraction failed'); setScanLoading(false); return; }
+      const raw: (ScanResult[] | ScanResult) & { error?: string } = await r.json();
+      if (!r.ok) { setScanError((raw as { error?: string }).error ?? 'Extraction failed'); setScanLoading(false); return; }
 
-      // Populate preview form from extraction result
-      setScanPrevCourtFee(data.courtFee != null ? String(data.courtFee) : '');
-      // If we have count + unit price use them; if only total, derive unit price as total/count or leave unit blank
-      if (data.numShuttlecocks != null && data.shuttlecockUnitPrice != null) {
-        setScanPrevNumShut(String(data.numShuttlecocks));
-        setScanPrevUnitPr(String(data.shuttlecockUnitPrice));
-      } else if (data.numShuttlecocks != null && data.shuttlecockTotal != null) {
-        setScanPrevNumShut(String(data.numShuttlecocks));
-        setScanPrevUnitPr(String(Math.round(data.shuttlecockTotal / data.numShuttlecocks)));
-      } else if (data.shuttlecockTotal != null) {
-        // Only total known — put count=1, unit=total as a placeholder
-        setScanPrevNumShut('1');
-        setScanPrevUnitPr(String(data.shuttlecockTotal));
-      } else {
-        setScanPrevNumShut('');
-        setScanPrevUnitPr('');
-      }
-      setScanPrevDate(new Date().toISOString().slice(0, 10));
-      setScanPrevNote('');
-      setScanPrevRawText(data.rawText ?? '');
-      setScanPrevRawOpen(false);
-      setScanPrevResult(null);
-      // Extra items → highlight
-      if (data.extraItems && data.extraItems.length > 0) {
-        setScanPrevHighlight(true);
-        setScanPrevHlNote(data.extraItems.map((it: ScanExtraItem) => `${it.name}: ${it.price.toLocaleString()}đ`).join(', '));
-      } else {
-        setScanPrevHighlight(false);
-        setScanPrevHlNote('');
-      }
-      setScanPrevSelected(Object.fromEntries(tournamentPlayers.map(n => [n, true])));
+      // Normalise to array
+      const results: ScanResult[] = Array.isArray(raw) ? raw : [raw];
+      if (results.length === 0) { setScanError('No invoice found in image'); setScanLoading(false); return; }
+
+      setScanResults(results);
+      applyMergedResultsToForm(results); // always merge all into one session
       setScanLoading(false);
       setAddMode('preview');
     } catch (e: unknown) {
@@ -2234,10 +2248,18 @@ function PaymentScreen({ onBack, tournamentPlayers = [] }: { onBack: () => void;
             const players   = Array.from(new Set([...tournamentPlayers, ...allDbPlayers])).filter((n: string) => scanPrevSelected[n]);
             return (
               <Card>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: scanResults.length > 1 ? 10 : 16 }}>
                   <button onClick={() => setAddMode('choose')} style={{ background: 'none', border: 'none', color: 'var(--text3)', fontSize: 20, cursor: 'pointer', padding: 0, lineHeight: 1 }}>←</button>
                   <CardTitle style={{ margin: 0 }}>{scanImageUrl ? '📷 Review Scanned Invoice' : '✏️ New Session'}</CardTitle>
                 </div>
+                {scanResults.length > 1 && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14, background: 'rgba(0,229,255,.08)', border: '1px solid rgba(0,229,255,.25)', borderRadius: 8, padding: '8px 12px' }}>
+                    <span style={{ fontSize: 16 }}>📋</span>
+                    <span style={{ fontSize: 13, color: 'var(--accent2)', fontWeight: 600 }}>
+                      {scanResults.length} invoices detected — totals combined into one session
+                    </span>
+                  </div>
+                )}
 
                 {/* Scanned image thumbnail */}
                 {scanImageUrl && (

@@ -12,25 +12,35 @@ import type { NextApiRequest, NextApiResponse } from 'next';
 import { Mistral } from '@mistralai/mistralai';
 
 const PROMPT = `You are an expert at reading Vietnamese badminton court invoices.
+The image may contain ONE invoice or MULTIPLE invoices side by side / stacked.
+
 Extract billing information and return ONLY valid JSON — no markdown, no prose.
 
-Rules:
+Step 1 — Count how many separate invoices are visible in the image.
+Step 2 — For EACH invoice, extract its data independently.
+Step 3 — Return a JSON array where each element represents one invoice.
+
+Extraction rules (apply per invoice):
 - "Tiền sân" / "thuê sân" / "sân cầu" → courtFee
 - "Cầu" / "quả cầu" / "cầu lông" + số lượng → numShuttlecocks + shuttlecockUnitPrice
   If only total shuttlecock cost is listed (no count×price), put it in shuttlecockTotal and leave count/price null.
 - Everything else (nước, nước suối, đồ uống, băng dán, v.v.) → extraItems[]
 - All prices in VND (numbers only, no "đ" or ",").
 - If a field cannot be found, use null.
+- "invoiceIndex": sequential number starting from 1 (left-to-right, top-to-bottom order).
 
-Return this exact JSON shape:
-{
-  "courtFee": <number|null>,
-  "numShuttlecocks": <number|null>,
-  "shuttlecockUnitPrice": <number|null>,
-  "shuttlecockTotal": <number|null>,
-  "extraItems": [ { "name": "<Vietnamese name>", "price": <number> } ],
-  "rawText": "<full text you read from the invoice>"
-}`;
+Return this exact JSON shape — always an array, even for a single invoice:
+[
+  {
+    "invoiceIndex": 1,
+    "courtFee": <number|null>,
+    "numShuttlecocks": <number|null>,
+    "shuttlecockUnitPrice": <number|null>,
+    "shuttlecockTotal": <number|null>,
+    "extraItems": [ { "name": "<Vietnamese name>", "price": <number> } ],
+    "rawText": "<full text you read from this invoice>"
+  }
+]`;
 
 /* ─── Server-side rate-limit queue (1 req/s) ─────────────────────────────── */
 // Module-level state persists across requests in the same Node process.
