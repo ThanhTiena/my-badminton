@@ -284,7 +284,7 @@ body {
 ════════════════════════════════════════════════════ */
 .player-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
   gap: 10px;
   margin-top: 4px;
 }
@@ -293,11 +293,12 @@ body {
   background: var(--bg3); border: 1px solid var(--border);
   border-radius: var(--r-sm); padding: 10px 12px;
   transition: border-color .15s;
+  min-width: 0;
 }
 .player-card:hover { border-color: var(--text3); }
-.player-card .info { flex: 1; min-width: 0; }
-.player-card .name { font-size: 14px; font-weight: 600; word-break: break-word; white-space: normal; }
-.player-card .stats { font-size: 11px; color: var(--text3); margin-top: 1px; }
+.player-card .info { flex: 1; min-width: 0; overflow: hidden; }
+.player-card .name { font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.player-card .stats { font-size: 11px; color: var(--text3); margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .player-card .actions { display: flex; gap: 6px; flex-shrink: 0; }
 
 .group-toggle-btn {
@@ -1134,7 +1135,7 @@ body {
   .two-col { grid-template-columns: 1fr; gap: 12px; }
 
   /* ── Player grid ── */
-  .player-grid { grid-template-columns: 1fr 1fr; gap: 8px; }
+  .player-grid { grid-template-columns: 1fr; gap: 8px; }
   .player-card .name  { font-size: 13px; }
   .player-card .stats { font-size: 10px; }
 
