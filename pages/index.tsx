@@ -280,11 +280,11 @@ function RosterScreen({ onDone }: { onDone: () => void }) {
         }
       </Card>
 
-      {/* {players.length > 0 && (
+      {players.length > 0 && (
         <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
           <Btn variant="primary" size="lg" onClick={onDone}>🚀 Start a Tournament →</Btn>
         </div>
-      )} */}
+      )}
     </div>
   );
 }
