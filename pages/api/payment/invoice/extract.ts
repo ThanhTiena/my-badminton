@@ -112,6 +112,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(405).end();
   }
 
+  if (req.cookies['admin_session'] !== '1') {
+    return res.status(401).json({ error: 'Admin login required to use invoice scan' });
+  }
+
   if (!process.env.MISTRAL_API_KEY) {
     return res.status(500).json({ error: 'MISTRAL_API_KEY is not configured' });
   }

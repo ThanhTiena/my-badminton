@@ -2172,23 +2172,33 @@ function PaymentScreen({ onBack, tournamentPlayers = [] }: { onBack: () => void;
                   <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text)' }}>Manual</div>
                   <div style={{ fontSize: 12, color: 'var(--text3)', marginTop: 4 }}>Type in the numbers</div>
                 </button>
-                <label
-                  style={{ background: 'var(--bg3)', border: '2px solid var(--accent2)', borderRadius: 14, padding: '20px 12px', cursor: 'pointer', textAlign: 'center', display: 'block' }}
-                >
-                  <input
-                    type="file" accept="image/*" capture="environment" style={{ display: 'none' }}
-                    onChange={(e: { target: HTMLInputElement }) => {
-                      const file = e.target.files?.[0];
-                      if (!file) return;
-                      const reader = new FileReader();
-                      reader.onload = ev => handleScanImage(ev.target?.result as string);
-                      reader.readAsDataURL(file);
-                    }}
-                  />
-                  <div style={{ fontSize: 32, marginBottom: 8 }}>📷</div>
-                  <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--accent2)' }}>Scan Invoice</div>
-                  <div style={{ fontSize: 12, color: 'var(--text3)', marginTop: 4 }}>Take a photo to extract</div>
-                </label>
+                {isAdmin ? (
+                  <label
+                    style={{ background: 'var(--bg3)', border: '2px solid var(--accent2)', borderRadius: 14, padding: '20px 12px', cursor: 'pointer', textAlign: 'center', display: 'block' }}
+                  >
+                    <input
+                      type="file" accept="image/*" capture="environment" style={{ display: 'none' }}
+                      onChange={(e: { target: HTMLInputElement }) => {
+                        const file = e.target.files?.[0];
+                        if (!file) return;
+                        const reader = new FileReader();
+                        reader.onload = ev => handleScanImage(ev.target?.result as string);
+                        reader.readAsDataURL(file);
+                      }}
+                    />
+                    <div style={{ fontSize: 32, marginBottom: 8 }}>📷</div>
+                    <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--accent2)' }}>Scan Invoice</div>
+                    <div style={{ fontSize: 12, color: 'var(--text3)', marginTop: 4 }}>Take a photo to extract</div>
+                  </label>
+                ) : (
+                  <div
+                    style={{ background: 'var(--bg2)', border: '2px solid var(--border)', borderRadius: 14, padding: '20px 12px', textAlign: 'center', opacity: 0.5, cursor: 'not-allowed' }}
+                  >
+                    <div style={{ fontSize: 32, marginBottom: 8 }}>🔒</div>
+                    <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text3)' }}>Scan Invoice</div>
+                    <div style={{ fontSize: 12, color: 'var(--text3)', marginTop: 4 }}>Admin only</div>
+                  </div>
+                )}
               </div>
             </Card>
           )}
