@@ -16,7 +16,7 @@
 export const config = { api: { bodyParser: { sizeLimit: '20mb' } } };
 
 import type { NextApiRequest, NextApiResponse } from 'next';
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import { Mistral } from '@mistralai/mistralai';
 
 const PROMPT = `You are an expert at reading Vietnamese badminton court invoices.
 Extract billing information and return ONLY valid JSON — no markdown, no prose.
@@ -37,9 +37,7 @@ Return this exact JSON shape:
   "shuttlecockTotal": <number|null>,
   "extraItems": [ { "name": "<Vietnamese name>", "price": <number> } ],
   "rawText": "<full text you read from the invoice>"
-}
-
-Please extract the invoice information from this image.`;
+}`;
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== 'POST') {
@@ -47,8 +45,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(405).end();
   }
 
-  if (!process.env.GEMINI_API_KEY) {
-    return res.status(500).json({ error: 'GEMINI_API_KEY is not configured' });
+  if (!process.env.MISTRAL_API_KEY) {
+    return res.status(500).json({ error: 'MISTRAL_API_KEY is not configured' });
   }
 
   const { image } = req.body as { image?: string };
@@ -56,27 +54,31 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(400).json({ error: '"image" must be a base64 data URL' });
   }
 
-  // Strip the data URL prefix to get pure base64
-  const [header, base64Data] = image.split(',');
-  const mimeType = header.replace('data:', '').replace(';base64', '');
-
   try {
-    const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash-8b' });
+    const client = new Mistral({ apiKey: process.env.MISTRAL_API_KEY });
 
-    const result = await model.generateContent([
-      PROMPT,
-      { inlineData: { data: base64Data, mimeType } },
-    ]);
+    const result = await client.chat.complete({
+      model: 'pixtral-12b-2409',
+      messages: [
+        {
+          role: 'user',
+          content: [
+            { type: 'image_url', imageUrl: { url: image } },
+            { type: 'text', text: PROMPT },
+          ],
+        },
+      ],
+    });
 
-    const text = result.response.text();
+    const text = result.choices?.[0]?.message?.content ?? '';
+    const textStr = Array.isArray(text) ? text.map((c: { type: string; text?: string }) => c.type === 'text' ? c.text : '').join('') : String(text);
 
     let parsed: unknown;
     try {
-      const cleaned = text.replace(/^```(?:json)?\n?/i, '').replace(/\n?```$/i, '').trim();
+      const cleaned = textStr.replace(/^```(?:json)?\n?/i, '').replace(/\n?```$/i, '').trim();
       parsed = JSON.parse(cleaned);
     } catch {
-      return res.status(502).json({ error: 'Failed to parse AI response', raw: text });
+      return res.status(502).json({ error: 'Failed to parse AI response', raw: textStr });
     }
 
     return res.status(200).json(parsed);
