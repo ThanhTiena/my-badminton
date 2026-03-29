@@ -236,9 +236,11 @@ function RosterScreen({ onDone }: { onDone: () => void }) {
                   const isEditing = editingId === id;
                   return (
                     <div key={id} className="player-card anim-slide">
-                      <div className="pc-top">
-                        <Badge group={p.group} />
-                        <div className="info">
+                      <div className="pc-body">
+                        <div className={`pc-avatar ${p.group}`}>
+                          {p.name.trim().charAt(0)}
+                        </div>
+                        <div className="pc-info">
                           {isEditing ? (
                             <input
                               className="input"
@@ -254,25 +256,27 @@ function RosterScreen({ onDone }: { onDone: () => void }) {
                               onBlur={() => rename(id)}
                             />
                           ) : (
-                            <div className="name" title={p.name}>{p.name}</div>
+                            <div className="name">{p.name}</div>
                           )}
-                          <div className="stats">🏆 {p.stats.titles} title{p.stats.titles !== 1 ? 's' : ''} · {p.stats.wins}W {p.stats.losses}L</div>
+                          <span className={`pc-badge ${p.group}`}>{p.group === 'pro' ? '🥇 Pro' : '🌱 Beginner'}</span>
+                          <div className="stats">
+                            <span className="stat-chip">🏆 {p.stats.titles}</span>
+                            <span className="stat-chip">{p.stats.wins}W</span>
+                            <span className="stat-chip">{p.stats.losses}L</span>
+                          </div>
                         </div>
                       </div>
-                      <div className="actions">
-                        <button
-                          className="group-toggle-btn"
-                          title="Edit name"
-                          onClick={() => { setEditingId(id); setEditName(p.name); }}
-                        >✏️</button>
-                        <button
-                          className="group-toggle-btn"
-                          title="Switch Pro ↔ Beg"
-                          onClick={() => toggleGroup(id, p.group)}
-                        >
-                          {p.group === 'pro' ? '→🌱' : '→🥇'}
+                      <div className="pc-actions">
+                        <button className="pc-action-btn" onClick={() => { setEditingId(id); setEditName(p.name); }}>
+                          <span className="icon">✏️</span> Edit
                         </button>
-                        <Btn variant="danger" size="sm" onClick={() => del(id)}>✕</Btn>
+                        <button className="pc-action-btn" onClick={() => toggleGroup(id, p.group)}>
+                          <span className="icon">{p.group === 'pro' ? '🌱' : '🥇'}</span>
+                          {p.group === 'pro' ? 'To Beg' : 'To Pro'}
+                        </button>
+                        <button className="pc-action-btn danger" onClick={() => del(id)}>
+                          <span className="icon">🗑️</span> Remove
+                        </button>
                       </div>
                     </div>
                   );
