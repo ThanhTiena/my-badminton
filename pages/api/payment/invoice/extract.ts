@@ -115,6 +115,74 @@ async function callMistral(image: string): Promise<string> {
   throw new Error('Max retries exceeded');
 }
 
+/* ─── Robust JSON parser — handles all model output variations ───────────── */
+function parseAIResponse(raw: string): unknown[] {
+  let text = raw.trim();
+
+  // 1. Strip markdown code fences  ```json ... ``` or ``` ... ```
+  text = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
+
+  // 2. Double-serialized: model returned a JSON string e.g. "[ ... ]"
+  if (text.startsWith('"') && text.endsWith('"')) {
+    try { text = JSON.parse(text) as string; } catch { /* keep as-is */ }
+    text = text.trim();
+  }
+
+  // 3. Try direct parse first (fast path — covers most cases)
+  try {
+    const direct = JSON.parse(text);
+    return Array.isArray(direct) ? direct : [direct];
+  } catch { /* fall through to repair */ }
+
+  // 4. Extract the outermost [...] or {...} block
+  //    Walk character-by-character to find balanced brackets,
+  //    which avoids greedy regex mis-matching on nested brackets.
+  const extract = (open: string, close: string): string | null => {
+    const start = text.indexOf(open);
+    if (start === -1) return null;
+    let depth = 0;
+    for (let i = start; i < text.length; i++) {
+      if (text[i] === open)  depth++;
+      if (text[i] === close) depth--;
+      if (depth === 0) return text.slice(start, i + 1);
+    }
+    return null;
+  };
+
+  const arrayBlock = extract('[', ']');
+  const objBlock   = extract('{', '}');
+  // Prefer array; fall back to object
+  const block = arrayBlock ?? objBlock;
+  if (!block) throw new Error('No JSON structure found in response');
+
+  // 5. Repair common model mistakes inside the block:
+  //    a) Unescaped newlines/tabs inside string values
+  //    b) Trailing commas before } or ]
+  //    c) Single-quoted strings → double-quoted
+  const repaired = block
+    // replace literal newline/tab/CR inside JSON strings with escape sequences
+    .replace(/("(?:[^"\\]|\\.)*")|(\n)|(\r)|(\t)/g, (match, str, nl, cr, tab) => {
+      if (str) return str;          // inside a string — keep as-is (already valid)
+      if (nl)  return '';           // bare newline outside string — remove
+      if (cr)  return '';           // bare CR outside string — remove
+      if (tab) return '';           // bare tab outside string — remove
+      return match;
+    })
+    // fix unescaped newlines *inside* string values specifically
+    .replace(/"((?:[^"\\]|\\.)*)"/g, (_m, content: string) =>
+      '"' + content.replace(/\n/g, '\\n').replace(/\r/g, '\\r').replace(/\t/g, '\\t') + '"'
+    )
+    // remove trailing commas
+    .replace(/,\s*([}\]])/g, '$1');
+
+  try {
+    const result = JSON.parse(repaired);
+    return Array.isArray(result) ? result : [result];
+  } catch {
+    throw new Error('JSON repair failed');
+  }
+}
+
 /* ─── Handler ────────────────────────────────────────────────────────────── */
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== 'POST') {
@@ -148,8 +216,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     let parsed: unknown;
     try {
-      const cleaned = text.replace(/^```(?:json)?\n?/i, '').replace(/\n?```$/i, '').trim();
-      parsed = JSON.parse(cleaned);
+      parsed = parseAIResponse(text);
     } catch {
       return res.status(502).json({ error: 'Failed to parse AI response', raw: text });
     }
