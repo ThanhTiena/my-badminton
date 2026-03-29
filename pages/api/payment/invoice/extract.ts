@@ -81,7 +81,7 @@ async function callMistral(image: string): Promise<string> {
   for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
     try {
       const result = await client.chat.complete({
-        model: 'mistral-large-latest',
+        model: 'ministral-8b-latest',
         messages: [
           {
             role: 'user',
