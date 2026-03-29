@@ -16,11 +16,9 @@
 export const config = { api: { bodyParser: { sizeLimit: '20mb' } } };
 
 import type { NextApiRequest, NextApiResponse } from 'next';
-import Anthropic from '@anthropic-ai/sdk';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 
-const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-
-const SYSTEM_PROMPT = `You are an expert at reading Vietnamese badminton court invoices.
+const PROMPT = `You are an expert at reading Vietnamese badminton court invoices.
 Extract billing information and return ONLY valid JSON — no markdown, no prose.
 
 Rules:
@@ -39,7 +37,9 @@ Return this exact JSON shape:
   "shuttlecockTotal": <number|null>,
   "extraItems": [ { "name": "<Vietnamese name>", "price": <number> } ],
   "rawText": "<full text you read from the invoice>"
-}`;
+}
+
+Please extract the invoice information from this image.`;
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== 'POST') {
@@ -47,8 +47,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(405).end();
   }
 
-  if (!process.env.ANTHROPIC_API_KEY) {
-    return res.status(500).json({ error: 'ANTHROPIC_API_KEY is not configured' });
+  if (!process.env.GEMINI_API_KEY) {
+    return res.status(500).json({ error: 'GEMINI_API_KEY is not configured' });
   }
 
   const { image } = req.body as { image?: string };
@@ -58,37 +58,21 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   // Strip the data URL prefix to get pure base64
   const [header, base64Data] = image.split(',');
-  const mediaType = header.replace('data:', '').replace(';base64', '') as
-    'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp';
+  const mimeType = header.replace('data:', '').replace(';base64', '');
 
   try {
-    const message = await client.messages.create({
-      model: 'claude-opus-4-6',
-      max_tokens: 1024,
-      system: SYSTEM_PROMPT,
-      messages: [
-        {
-          role: 'user',
-          content: [
-            {
-              type: 'image',
-              source: { type: 'base64', media_type: mediaType, data: base64Data },
-            },
-            {
-              type: 'text',
-              text: 'Please extract the invoice information from this image.',
-            },
-          ],
-        },
-      ],
-    });
+    const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
 
-    const text = message.content[0].type === 'text' ? message.content[0].text : '';
+    const result = await model.generateContent([
+      PROMPT,
+      { inlineData: { data: base64Data, mimeType } },
+    ]);
 
-    // Parse JSON — Claude should return pure JSON per the system prompt
+    const text = result.response.text();
+
     let parsed: unknown;
     try {
-      // Strip any accidental markdown code fences
       const cleaned = text.replace(/^```(?:json)?\n?/i, '').replace(/\n?```$/i, '').trim();
       parsed = JSON.parse(cleaned);
     } catch {
