@@ -236,26 +236,28 @@ function RosterScreen({ onDone }: { onDone: () => void }) {
                   const isEditing = editingId === id;
                   return (
                     <div key={id} className="player-card anim-slide">
-                      <Badge group={p.group} />
-                      <div className="info">
-                        {isEditing ? (
-                          <input
-                            className="input"
-                            autoFocus
-                            value={editName}
-                            maxLength={30}
-                            style={{ padding: '4px 8px', fontSize: 13, marginBottom: 0 }}
-                            onChange={({ target }: { target: HTMLInputElement }) => setEditName(target.value)}
-                            onKeyDown={({ key }: { key: string }) => {
-                              if (key === 'Enter') rename(id);
-                              if (key === 'Escape') setEditingId(null);
-                            }}
-                            onBlur={() => rename(id)}
-                          />
-                        ) : (
-                          <div className="name">{p.name}</div>
-                        )}
-                        <div className="stats">🏆 {p.stats.titles} title{p.stats.titles !== 1 ? 's' : ''} · {p.stats.wins}W {p.stats.losses}L</div>
+                      <div className="pc-top">
+                        <Badge group={p.group} />
+                        <div className="info">
+                          {isEditing ? (
+                            <input
+                              className="input"
+                              autoFocus
+                              value={editName}
+                              maxLength={30}
+                              style={{ padding: '4px 8px', fontSize: 13, marginBottom: 0 }}
+                              onChange={({ target }: { target: HTMLInputElement }) => setEditName(target.value)}
+                              onKeyDown={({ key }: { key: string }) => {
+                                if (key === 'Enter') rename(id);
+                                if (key === 'Escape') setEditingId(null);
+                              }}
+                              onBlur={() => rename(id)}
+                            />
+                          ) : (
+                            <div className="name" title={p.name}>{p.name}</div>
+                          )}
+                          <div className="stats">🏆 {p.stats.titles} title{p.stats.titles !== 1 ? 's' : ''} · {p.stats.wins}W {p.stats.losses}L</div>
+                        </div>
                       </div>
                       <div className="actions">
                         <button
