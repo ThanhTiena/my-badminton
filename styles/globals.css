@@ -28,15 +28,23 @@
 }
 
 /* ── Base ── */
-html { scroll-behavior: smooth; }
+html {
+  scroll-behavior: smooth;
+  /* prevent iOS text size adjustment on orientation change */
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
 
 body {
   font-family: 'Inter', system-ui, -apple-system, sans-serif;
   background: var(--bg);
   color: var(--text);
   min-height: 100vh;
+  min-height: 100dvh;  /* dynamic viewport height on mobile */
   line-height: 1.5;
   font-size: 15px;
+  /* prevent horizontal overflow on mobile */
+  overflow-x: hidden;
 }
 
 ::-webkit-scrollbar { width: 6px; height: 6px; }
@@ -65,6 +73,10 @@ body {
   max-width: 1280px;
   margin: 0 auto;
   padding: 32px 20px 100px;
+  /* safe area for notched phones */
+  padding-left: max(20px, env(safe-area-inset-left));
+  padding-right: max(20px, env(safe-area-inset-right));
+  padding-bottom: max(100px, calc(80px + env(safe-area-inset-bottom)));
 }
 
 /* ════════════════════════════════════════════════════
@@ -75,21 +87,35 @@ body {
   background: linear-gradient(135deg, var(--bg2) 0%, var(--bg3) 100%);
   border-bottom: 1px solid var(--border);
   backdrop-filter: blur(12px);
-  height: 64px;
-  padding: 0 24px;
+  -webkit-backdrop-filter: blur(12px);
+  min-height: 56px;
+  padding: 0 16px;
+  padding-left: max(16px, env(safe-area-inset-left));
+  padding-right: max(16px, env(safe-area-inset-right));
   display: flex; align-items: center; justify-content: space-between;
+  flex-wrap: wrap; gap: 6px;
 }
 .app-header .logo {
   display: flex; align-items: center; gap: 8px;
   font-size: 20px; font-weight: 800; letter-spacing: -.5px;
 }
 .app-header .logo span { color: var(--accent); }
-.app-header .header-right { display: flex; align-items: center; gap: 12px; }
+.app-header .header-right {
+  display: flex; align-items: center; gap: 6px;
+  flex-wrap: wrap; overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  max-width: calc(100vw - 140px);
+}
+.app-header .header-right::-webkit-scrollbar { display: none; }
 .app-header .nav-link {
   background: none; border: none;
   font-size: 13px; color: var(--text2); cursor: pointer;
   transition: color .15s;
-  padding: 6px 10px; border-radius: var(--r-sm);
+  padding: 8px 8px; border-radius: var(--r-sm);
+  white-space: nowrap;
+  /* minimum touch target */
+  min-height: 40px; display: inline-flex; align-items: center;
 }
 .app-header .nav-link:hover { color: var(--accent2); background: rgba(0,229,255,.06); }
 .badge-pill {
@@ -142,6 +168,11 @@ body {
   cursor: pointer; font-family: inherit; font-size: 14px; font-weight: 600;
   transition: all .15s ease; white-space: nowrap;
   user-select: none; line-height: 1;
+  /* minimum 44px touch target */
+  min-height: 44px;
+  /* remove tap highlight on mobile */
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
 }
 .btn:active { transform: scale(.97); }
 .btn:disabled { opacity: .4; cursor: not-allowed; transform: none !important; }
@@ -173,9 +204,15 @@ body {
 .input {
   background: var(--bg3); border: 1px solid var(--border);
   border-radius: var(--r-sm); color: var(--text);
-  font-family: inherit; font-size: 14px; padding: 10px 14px;
+  font-family: inherit;
+  /* ≥16px prevents iOS auto-zoom on focus */
+  font-size: max(16px, 14px);
+  padding: 10px 14px;
   outline: none; transition: border-color .15s, box-shadow .15s;
   width: 100%;
+  /* remove iOS default styling */
+  -webkit-appearance: none;
+  appearance: none;
 }
 .input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(57,255,20,.1); }
 .input::placeholder { color: var(--text3); }
@@ -198,12 +235,18 @@ body {
   display: flex; gap: 3px;
   background: var(--bg3); border-radius: 10px; padding: 4px;
   margin-bottom: 24px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
 }
+.tabs::-webkit-scrollbar { display: none; }
 .tab {
-  flex: 1; padding: 9px 16px; border-radius: 8px; border: none;
+  flex: 1; padding: 9px 12px; border-radius: 8px; border: none;
   background: transparent; color: var(--text2); cursor: pointer;
   font-family: inherit; font-size: 13px; font-weight: 500;
   transition: all .15s; text-align: center; white-space: nowrap;
+  min-height: 40px; display: inline-flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
 }
 .tab.active {
   background: var(--card); color: var(--text); font-weight: 600;
@@ -241,7 +284,7 @@ body {
 ════════════════════════════════════════════════════ */
 .player-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
   gap: 10px;
   margin-top: 4px;
 }
@@ -409,13 +452,15 @@ body {
 
 /* Big score display + tap button */
 .score-tap-btn {
-  width: 72px; height: 72px; border-radius: 50%;
+  width: 80px; height: 80px; border-radius: 50%;
   border: 2px solid var(--border);
   background: var(--bg4); color: var(--text);
-  font-size: 32px; font-weight: 900;
+  font-size: 34px; font-weight: 900;
   cursor: pointer; display: flex; align-items: center; justify-content: center;
   transition: all .1s; user-select: none; position: relative;
   margin-bottom: 8px;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
 }
 .score-tap-btn:active { transform: scale(.92); }
 .score-tap-btn.can-win {
@@ -1038,4 +1083,153 @@ body {
 .invoice-upload-zone:hover {
   border-color: var(--accent2);
   background: rgba(0,229,255,.04);
+}
+
+/* ════════════════════════════════════════════════════
+   RESPONSIVE — TABLET  (≤ 1024px)
+════════════════════════════════════════════════════ */
+@media (max-width: 1024px) {
+  .app-wrap { padding: 24px 16px 100px; }
+  .matches-grid { grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); }
+  .formula-row  { grid-template-columns: 100px 1fr auto; }
+}
+
+/* ════════════════════════════════════════════════════
+   RESPONSIVE — MOBILE  (≤ 640px)
+════════════════════════════════════════════════════ */
+@media (max-width: 640px) {
+
+  /* ── Layout ── */
+  .app-wrap {
+    padding: 16px 12px 90px;
+    padding-left:  max(12px, env(safe-area-inset-left));
+    padding-right: max(12px, env(safe-area-inset-right));
+    padding-bottom: max(90px, calc(72px + env(safe-area-inset-bottom)));
+  }
+
+  /* ── Header ── */
+  .app-header { padding: 0 12px; min-height: 52px; }
+  .app-header .logo { font-size: 17px; }
+  .app-header .header-right { gap: 2px; max-width: calc(100vw - 120px); }
+  .app-header .nav-link { font-size: 12px; padding: 6px 6px; }
+  .badge-pill { font-size: 11px; padding: 3px 10px; }
+
+  /* ── Typography ── */
+  .page-title { font-size: 20px; }
+  .page-sub   { font-size: 13px; margin-bottom: 20px; }
+
+  /* ── Cards ── */
+  .card { padding: 16px 14px; border-radius: 10px; }
+  .card-title { font-size: 10px; }
+
+  /* ── Tabs ── */
+  .tabs { padding: 3px; border-radius: 8px; }
+  .tab  { padding: 8px 10px; font-size: 12px; min-height: 38px; }
+
+  /* ── Buttons ── */
+  .btn-lg { padding: 13px 24px; font-size: 14px; }
+  .btn    { min-height: 42px; }
+
+  /* ── Two-col grid ── */
+  .two-col { grid-template-columns: 1fr; gap: 12px; }
+
+  /* ── Player grid ── */
+  .player-grid { grid-template-columns: 1fr 1fr; gap: 8px; }
+  .player-card .name  { font-size: 13px; }
+  .player-card .stats { font-size: 10px; }
+
+  /* ── Player select list ── */
+  .player-select-list { max-height: 280px; }
+
+  /* ── Match cards ── */
+  .matches-grid { grid-template-columns: 1fr; }
+  .match-card   { padding: 16px; }
+  .match-team-name { font-size: 14px; }
+
+  /* ── Score tap buttons ── */
+  .score-tap-btn { width: 88px; height: 88px; font-size: 38px; }
+  .score-side    { padding: 10px 6px 8px; }
+
+  /* ── Standings / rank tables ── */
+  .standings-table th,
+  .standings-table td { padding: 8px 10px; font-size: 12px; }
+  .rank-table th,
+  .rank-table td       { padding: 8px 8px;  font-size: 12px; }
+
+  /* ── Bracket ── */
+  .bracket-round { min-width: 160px; }
+  .bracket-slot  { font-size: 11px; padding: 6px 8px; max-width: 140px; }
+
+  /* ── History ── */
+  .t-history-header { padding: 12px 14px; }
+  .t-history-trophy { font-size: 24px; }
+  .t-history-body   { padding: 14px; }
+
+  /* ── Champion ── */
+  .champion-wrap   { padding: 40px 16px; }
+  .champion-trophy { font-size: 72px; }
+  .champion-btns   { flex-direction: column; align-items: stretch; gap: 8px; }
+
+  /* ── Podium ── */
+  .podium { gap: 8px; }
+  .podium-avatar.rank-1 { width: 60px; height: 60px; font-size: 18px; }
+  .podium-avatar.rank-2 { width: 50px; height: 50px; font-size: 16px; }
+  .podium-avatar.rank-3 { width: 44px; height: 44px; font-size: 14px; }
+  .podium-name  { font-size: 11px; max-width: 72px; }
+  .podium-score { font-size: 15px; }
+  .podium-score.rank-1 { font-size: 18px; }
+
+  /* ── Formula panel ── */
+  .formula-row { grid-template-columns: 90px 1fr auto; gap: 6px; }
+  .formula-amount { min-width: 72px; font-size: 12px; }
+  .formula-row-name { font-size: 11px; }
+
+  /* ── Pill toggle ── */
+  .pill { padding: 7px 14px; font-size: 12px; }
+
+  /* ── Round header ── */
+  .round-header { margin-bottom: 14px; gap: 8px; }
+  .round-badge  { font-size: 12px; padding: 5px 12px; }
+
+  /* ── Cell popover — hide on mobile (tap UX) ── */
+  .cell-popover { display: none; }
+}
+
+/* ════════════════════════════════════════════════════
+   RESPONSIVE — SMALL PHONES  (≤ 390px)
+════════════════════════════════════════════════════ */
+@media (max-width: 390px) {
+  .app-wrap { padding: 12px 10px 80px; }
+  .player-grid { grid-template-columns: 1fr; }
+  .score-tap-btn { width: 76px; height: 76px; font-size: 34px; }
+  .tab { font-size: 11px; padding: 7px 8px; }
+  .page-title { font-size: 18px; }
+}
+
+/* ════════════════════════════════════════════════════
+   RESPONSIVE — LANDSCAPE PHONE  (short height)
+════════════════════════════════════════════════════ */
+@media (max-height: 500px) and (orientation: landscape) {
+  .app-header { min-height: 46px; }
+  .app-wrap   { padding-top: 10px; padding-bottom: 60px; }
+  .champion-wrap { padding: 20px 16px; }
+  .player-select-list { max-height: 180px; }
+  .score-tap-btn { width: 64px; height: 64px; font-size: 28px; }
+}
+
+/* ════════════════════════════════════════════════════
+   TOUCH — remove hover effects on touch devices
+════════════════════════════════════════════════════ */
+@media (hover: none) {
+  .match-card:hover        { transform: none; border-color: var(--border); }
+  .player-card:hover       { border-color: var(--border); }
+  .player-select-item:hover { border-color: var(--border); background: var(--bg3); }
+  .t-history-header:hover  { background: transparent; }
+  .btn-primary:hover       { background: var(--accent); box-shadow: none; }
+  .btn-secondary:hover     { background: var(--bg4); border-color: var(--border); }
+  .nav-link:hover          { color: var(--text2); background: none; }
+  /* active states for touch feedback instead */
+  .btn:active              { transform: scale(.96); opacity: .85; }
+  .score-tap-btn:active    { transform: scale(.88); }
+  .tab:active              { background: var(--bg4); }
 }
