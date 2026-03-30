@@ -1,11 +1,10 @@
 /**
  * GET  /api/payment/paid?period=YYYY-MM
- *   Returns all paid records for the given period.
- *   Response: { [playerName]: boolean }
+ *   Response: { [playerName]: { paid: boolean; paidAmount: number } }
  *
  * POST /api/payment/paid
- *   Body: { period: string; playerName: string; paid: boolean }
- *   Upserts one player's paid status for the period.
+ *   Body: { period: string; playerName: string; paid: boolean; paidAmount?: number }
+ *   paidAmount = how much the player has paid so far (remaining = grandTotal - paidAmount)
  */
 import type { NextApiRequest, NextApiResponse } from 'next';
 import client from '@/lib/mongodb';
@@ -14,9 +13,10 @@ const DB  = 'smashtour';
 const COL = 'payment_paid';
 
 interface PaidDoc {
-  period: string;      // e.g. "2026-03"
+  period: string;
   playerName: string;
   paid: boolean;
+  paidAmount: number;
   updatedAt: Date;
 }
 
@@ -27,19 +27,21 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const { period } = req.query as { period?: string };
     if (!period) return res.status(400).json({ error: '"period" query param required' });
     const docs = await col.find({ period }).toArray();
-    const map: Record<string, boolean> = {};
-    for (const doc of docs) map[doc.playerName] = doc.paid;
+    const map: Record<string, { paid: boolean; paidAmount: number }> = {};
+    for (const doc of docs) map[doc.playerName] = { paid: doc.paid, paidAmount: doc.paidAmount ?? 0 };
     return res.status(200).json(map);
   }
 
   if (req.method === 'POST') {
-    const { period, playerName, paid } = req.body as { period?: string; playerName?: string; paid?: boolean };
+    const { period, playerName, paid, paidAmount } = req.body as {
+      period?: string; playerName?: string; paid?: boolean; paidAmount?: number;
+    };
     if (!period || !playerName || typeof paid !== 'boolean') {
       return res.status(400).json({ error: '"period", "playerName", and "paid" are required' });
     }
     await col.updateOne(
       { period, playerName },
-      { $set: { period, playerName, paid, updatedAt: new Date() } },
+      { $set: { period, playerName, paid, paidAmount: paidAmount ?? 0, updatedAt: new Date() } },
       { upsert: true },
     );
     return res.status(200).json({ ok: true });

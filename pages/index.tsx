@@ -1609,8 +1609,11 @@ function PaymentScreen({ onBack, tournamentPlayers = [] }: { onBack: () => void;
   /* ── Invoice image click modal ── */
   const [invoiceModal, setInvoiceModal] = useState<{ images: string[]; idx: number; date: string } | null>(null);
 
-  /* ── Monthly paid map: playerName → boolean ── */
-  const [paidMap, setPaidMap] = useState<Record<string, boolean>>({});
+  /* ── Monthly paid map: playerName → { paid, paidAmount } ── */
+  const [paidMap, setPaidMap] = useState<Record<string, { paid: boolean; paidAmount: number }>>({});
+  /* ── Inline payment input: which player is being edited ── */
+  const [payingPlayer, setPayingPlayer] = useState<string | null>(null);
+  const [payingInput,  setPayingInput]  = useState('');
 
   /* ── Import state ── */
   const [importText,    setImportText]    = useState('');
@@ -1763,6 +1766,7 @@ function PaymentScreen({ onBack, tournamentPlayers = [] }: { onBack: () => void;
   }
 
   async function submitPreview() {
+    if (!isAdmin) { alert('Admin login required to save sessions.'); return; }
     const courtNum = parseFloat(scanPrevCourtFee) || 0;
     const shutNum  = parseFloat(scanPrevNumShut)  || 0;
     const unitNum  = parseFloat(scanPrevUnitPr)   || 0;
@@ -1812,6 +1816,7 @@ function PaymentScreen({ onBack, tournamentPlayers = [] }: { onBack: () => void;
   const addTotal      = addCourtNum + addShutTotal;
 
   async function submitAdd() {
+    if (!isAdmin) { alert('Admin login required to add sessions.'); return; }
     if (!addDate || addCourtNum < 0 || addShutNum < 0 || addUnitNum < 0 || addPlayers.length === 0) return;
     setAddSaving(true);
     setAddResult(null);
@@ -1872,7 +1877,7 @@ function PaymentScreen({ onBack, tournamentPlayers = [] }: { onBack: () => void;
     if (summaryMode === 'monthly') {
       fetch(`/api/payment/paid?period=${summaryRef}`)
         .then(r => r.json())
-        .then((map: Record<string, boolean>) => setPaidMap(map));
+        .then((map: Record<string, { paid: boolean; paidAmount: number }>) => setPaidMap(map));
     } else {
       setPaidMap({});
     }
@@ -1954,6 +1959,7 @@ function PaymentScreen({ onBack, tournamentPlayers = [] }: { onBack: () => void;
 
   async function saveEditSession() {
     if (!editingSession) return;
+    if (!isAdmin) { alert('Admin login required to edit sessions.'); return; }
     setEditSaving(true);
     setEditResult(null);
     const selectedPlayers = [...(editingSession.players.map((p: { name: string }) => p.name)), ...allDbPlayers]
@@ -2009,16 +2015,31 @@ function PaymentScreen({ onBack, tournamentPlayers = [] }: { onBack: () => void;
   }
 
   async function togglePaid(playerName: string, paid: boolean) {
-    const period = summaryRef;  // "YYYY-MM"
-    setPaidMap((prev: Record<string, boolean>) => ({ ...prev, [playerName]: paid }));
+    const period = summaryRef;
+    const prev = paidMap[playerName];
+    const paidAmount = paid ? (prev?.paidAmount ?? 0) : 0;
+    setPaidMap(p => ({ ...p, [playerName]: { paid, paidAmount } }));
     await fetch('/api/payment/paid', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ period, playerName, paid }),
+      body: JSON.stringify({ period, playerName, paid, paidAmount }),
+    });
+  }
+
+  async function savePaidAmount(playerName: string, paidAmount: number, grandTotal: number) {
+    if (!isAdmin) return;
+    const period = summaryRef;
+    const paid = paidAmount >= grandTotal;
+    setPaidMap(p => ({ ...p, [playerName]: { paid, paidAmount } }));
+    await fetch('/api/payment/paid', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ period, playerName, paid, paidAmount }),
     });
   }
 
   async function deleteSession(id: string) {
+    if (!isAdmin) { alert('Admin login required to delete sessions.'); return; }
     if (!confirm('Delete this session?')) return;
     await fetch(`/api/payment/sessions/${id}`, { method: 'DELETE' });
     // refresh summary
@@ -2627,6 +2648,16 @@ function PaymentScreen({ onBack, tournamentPlayers = [] }: { onBack: () => void;
             }
             const grandTotal = (summary.sessions as CourtSessionDoc[]).reduce((s: number, sess: CourtSessionDoc) => s + sess.totalCost, 0);
 
+            // Remaining = grandTotal - paidAmount (0 if fully paid)
+            const remainingTotals: Record<string, number> = {};
+            for (const name of allNames) {
+              const entry = paidMap[name];
+              const paidAmount = entry?.paidAmount ?? 0;
+              const isPaid = entry?.paid ?? false;
+              remainingTotals[name] = isPaid ? 0 : Math.max(0, grandTotals[name] - paidAmount);
+            }
+            const totalRemaining = allNames.reduce((sum, name) => sum + remainingTotals[name], 0);
+
             const cellStyle = {
               textAlign: 'right' as const, padding: '7px 10px', fontSize: 12,
               borderBottom: '1px solid var(--border)', borderRight: '1px solid var(--border)',
@@ -2664,9 +2695,17 @@ function PaymentScreen({ onBack, tournamentPlayers = [] }: { onBack: () => void;
                       {summary.sessions.length} session{summary.sessions.length !== 1 ? 's' : ''} · {allNames.length} players
                     </p>
                   </div>
-                  <div style={{ textAlign: 'right' }}>
-                    <p style={{ fontSize: 11, color: 'var(--text3)' }}>Grand total</p>
-                    <p style={{ fontSize: 24, fontWeight: 900, color: 'var(--accent)' }}>{formatVND(grandTotal)}</p>
+                  <div style={{ textAlign: 'right', display: 'flex', gap: 20, alignItems: 'flex-end' }}>
+                    {summaryMode === 'monthly' && totalRemaining < grandTotal && (
+                      <div>
+                        <p style={{ fontSize: 11, color: 'var(--text3)' }}>Remaining</p>
+                        <p style={{ fontSize: 20, fontWeight: 900, color: totalRemaining === 0 ? 'var(--success)' : 'var(--warn)' }}>{formatVND(totalRemaining)}</p>
+                      </div>
+                    )}
+                    <div>
+                      <p style={{ fontSize: 11, color: 'var(--text3)' }}>Grand total</p>
+                      <p style={{ fontSize: 24, fontWeight: 900, color: 'var(--accent)' }}>{formatVND(grandTotal)}</p>
+                    </div>
                   </div>
                 </div>
 
@@ -2692,9 +2731,14 @@ function PaymentScreen({ onBack, tournamentPlayers = [] }: { onBack: () => void;
                           </th>
                         )}
                         {summaryMode === 'monthly' && (
-                          <th rowSpan={3} style={{ ...headerStyle, color: 'var(--success)', fontSize: 12, minWidth: 70, textAlign: 'center', borderRight: 'none', verticalAlign: 'middle' }}>
-                            Paid
-                          </th>
+                          <>
+                            <th rowSpan={3} style={{ ...headerStyle, color: 'var(--warn)', fontSize: 12, minWidth: 100, textAlign: 'center', verticalAlign: 'middle' }}>
+                              Remaining
+                            </th>
+                            <th rowSpan={3} style={{ ...headerStyle, color: 'var(--success)', fontSize: 12, minWidth: 70, textAlign: 'center', borderRight: 'none', verticalAlign: 'middle' }}>
+                              Paid
+                            </th>
+                          </>
                         )}
                       </tr>
                       {/* ── Row 2: Week group headers ── */}
@@ -2764,18 +2808,53 @@ function PaymentScreen({ onBack, tournamentPlayers = [] }: { onBack: () => void;
                             </td>
                           )}
 
-                          {/* Monthly paid checkbox */}
+                          {/* Remaining + Paid columns */}
                           {summaryMode === 'monthly' && (
-                            <td style={{ ...cellStyle, textAlign: 'center', borderRight: 'none' }}>
-                              <input
-                                type="checkbox"
-                                checked={paidMap[name] ?? false}
-                                title={isAdmin ? (paidMap[name] ? `${name} paid` : `${name} not paid`) : 'Admin login required to change paid status'}
-                                disabled={!isAdmin}
-                                style={{ width: 16, height: 16, cursor: isAdmin ? 'pointer' : 'not-allowed', accentColor: 'var(--success)', opacity: isAdmin ? 1 : 0.5 }}
-                                onChange={(e: { target: HTMLInputElement }) => isAdmin && togglePaid(name, e.target.checked)}
-                              />
-                            </td>
+                            <>
+                              <td
+                                style={{ ...cellStyle, textAlign: 'right', fontWeight: 700, cursor: isAdmin ? 'pointer' : 'default', color: remainingTotals[name] === 0 ? 'var(--success)' : 'var(--warn)', minWidth: 110, position: 'relative' }}
+                                title={isAdmin ? 'Click to enter paid amount' : undefined}
+                                onClick={() => {
+                                  if (!isAdmin) return;
+                                  setPayingPlayer(name);
+                                  setPayingInput(String(paidMap[name]?.paidAmount ?? ''));
+                                }}
+                              >
+                                {payingPlayer === name ? (
+                                  <input
+                                    autoFocus
+                                    type="number"
+                                    value={payingInput}
+                                    onChange={(e: { target: HTMLInputElement }) => setPayingInput(e.target.value)}
+                                    onBlur={() => {
+                                      const amt = parseFloat(payingInput) || 0;
+                                      savePaidAmount(name, amt, grandTotals[name]);
+                                      setPayingPlayer(null);
+                                    }}
+                                    onKeyDown={(e: { key: string }) => {
+                                      if (e.key === 'Enter') {
+                                        const amt = parseFloat(payingInput) || 0;
+                                        savePaidAmount(name, amt, grandTotals[name]);
+                                        setPayingPlayer(null);
+                                      }
+                                      if (e.key === 'Escape') setPayingPlayer(null);
+                                    }}
+                                    style={{ width: '90%', fontSize: 12, padding: '2px 4px', background: 'var(--bg2)', border: '1px solid var(--accent2)', borderRadius: 4, color: 'var(--text)', textAlign: 'right' }}
+                                    onClick={(e: { stopPropagation: () => void }) => e.stopPropagation()}
+                                  />
+                                ) : remainingTotals[name] === 0 ? '✓ Paid' : formatVND(remainingTotals[name])}
+                              </td>
+                              <td style={{ ...cellStyle, textAlign: 'center', borderRight: 'none' }}>
+                                <input
+                                  type="checkbox"
+                                  checked={paidMap[name]?.paid ?? false}
+                                  title={isAdmin ? (paidMap[name]?.paid ? `${name} paid` : `${name} not paid`) : 'Admin login required to change paid status'}
+                                  disabled={!isAdmin}
+                                  style={{ width: 16, height: 16, cursor: isAdmin ? 'pointer' : 'not-allowed', accentColor: 'var(--success)', opacity: isAdmin ? 1 : 0.5 }}
+                                  onChange={(e: { target: HTMLInputElement }) => isAdmin && togglePaid(name, e.target.checked)}
+                                />
+                              </td>
+                            </>
                           )}
                         </tr>
                       ))}
@@ -2794,6 +2873,8 @@ function PaymentScreen({ onBack, tournamentPlayers = [] }: { onBack: () => void;
                             ))
                           )}
                           {showGrandTotal && <td style={{ ...grandStyle, borderRight: 'none' }}>{formatVND(grandTotal)}</td>}
+                          {summaryMode === 'monthly' && <td style={{ ...grandStyle }} />}
+                          {summaryMode === 'monthly' && <td style={{ ...grandStyle, borderRight: 'none' }} />}
                         </tr>
                       )}
 
@@ -2811,7 +2892,8 @@ function PaymentScreen({ onBack, tournamentPlayers = [] }: { onBack: () => void;
                               </td>
                             );
                           })}
-                          {showGrandTotal && <td style={{ ...weekStyle, borderRight: 'none' }} />}
+                          {showGrandTotal && <td style={{ ...weekStyle }} />}
+                          {summaryMode === 'monthly' && <td style={{ ...weekStyle }} />}
                           {summaryMode === 'monthly' && <td style={{ ...weekStyle, borderRight: 'none' }} />}
                         </tr>
                       )}
@@ -2837,6 +2919,7 @@ function PaymentScreen({ onBack, tournamentPlayers = [] }: { onBack: () => void;
                           ))
                         )}
                         {showGrandTotal && <td style={{ ...cellStyle }} />}
+                        {summaryMode === 'monthly' && <td style={{ ...cellStyle }} />}
                         {summaryMode === 'monthly' && <td style={{ ...cellStyle, borderRight: 'none' }} />}
                       </tr>
 
@@ -2853,7 +2936,9 @@ function PaymentScreen({ onBack, tournamentPlayers = [] }: { onBack: () => void;
                             </td>
                           ))
                         )}
-                        {showGrandTotal && <td style={{ ...cellStyle, borderRight: 'none' }} />}
+                        {showGrandTotal && <td style={{ ...cellStyle }} />}
+                        {summaryMode === 'monthly' && <td style={{ ...cellStyle }} />}
+                        {summaryMode === 'monthly' && <td style={{ ...cellStyle, borderRight: 'none' }} />}
                       </tr>
                     </tbody>
                   </table>
