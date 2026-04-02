@@ -1609,8 +1609,8 @@ function PaymentScreen({ onBack, tournamentPlayers = [] }: { onBack: () => void;
   /* ── Invoice image click modal ── */
   const [invoiceModal, setInvoiceModal] = useState<{ images: string[]; idx: number; date: string } | null>(null);
 
-  /* ── Monthly paid map: playerName → { paid, paidAmount } ── */
-  const [paidMap, setPaidMap] = useState<Record<string, { paid: boolean; paidAmount: number }>>({});
+  /* ── Monthly paid map: playerName → { paid, paidAmount, snapshotTotal } ── */
+  const [paidMap, setPaidMap] = useState<Record<string, { paid: boolean; paidAmount: number; snapshotTotal: number }>>({});
   /* ── Inline payment input: which player is being edited ── */
   const [payingPlayer, setPayingPlayer] = useState<string | null>(null);
   const [payingInput,  setPayingInput]  = useState('');
@@ -1877,7 +1877,7 @@ function PaymentScreen({ onBack, tournamentPlayers = [] }: { onBack: () => void;
     if (summaryMode === 'monthly') {
       fetch(`/api/payment/paid?period=${summaryRef}`)
         .then(r => r.json())
-        .then((map: Record<string, { paid: boolean; paidAmount: number }>) => setPaidMap(map));
+        .then((map: Record<string, { paid: boolean; paidAmount: number; snapshotTotal: number }>) => setPaidMap(map));
     } else {
       setPaidMap({});
     }
@@ -2015,27 +2015,30 @@ function PaymentScreen({ onBack, tournamentPlayers = [] }: { onBack: () => void;
       .then((data: SummaryData) => setSummary(data));
   }
 
-  async function togglePaid(playerName: string, paid: boolean) {
+  async function togglePaid(playerName: string, paid: boolean, currentGrandTotal: number) {
     const period = summaryRef;
-    const prev = paidMap[playerName];
-    const paidAmount = paid ? (prev?.paidAmount ?? 0) : 0;
-    setPaidMap(p => ({ ...p, [playerName]: { paid, paidAmount } }));
+    // When marking paid, snapshot the current grand total so future sessions don't affect remaining
+    const snapshotTotal = paid ? currentGrandTotal : 0;
+    const paidAmount    = paid ? currentGrandTotal : 0; // fully paid = paidAmount equals snapshot
+    setPaidMap(p => ({ ...p, [playerName]: { paid, paidAmount, snapshotTotal } }));
     await fetch('/api/payment/paid', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ period, playerName, paid, paidAmount }),
+      body: JSON.stringify({ period, playerName, paid, paidAmount, snapshotTotal }),
     });
   }
 
-  async function savePaidAmount(playerName: string, paidAmount: number, grandTotal: number) {
+  async function savePaidAmount(playerName: string, paidAmount: number, currentGrandTotal: number) {
     if (!isAdmin) return;
     const period = summaryRef;
-    const paid = paidAmount >= grandTotal;
-    setPaidMap(p => ({ ...p, [playerName]: { paid, paidAmount } }));
+    // Snapshot the grand total at this moment so remaining stays stable going forward
+    const snapshotTotal = currentGrandTotal;
+    const paid = paidAmount >= snapshotTotal;
+    setPaidMap(p => ({ ...p, [playerName]: { paid, paidAmount, snapshotTotal } }));
     await fetch('/api/payment/paid', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ period, playerName, paid, paidAmount }),
+      body: JSON.stringify({ period, playerName, paid, paidAmount, snapshotTotal }),
     });
   }
 
@@ -2655,13 +2658,19 @@ function PaymentScreen({ onBack, tournamentPlayers = [] }: { onBack: () => void;
             }
             const grandTotal = (summary.sessions as CourtSessionDoc[]).reduce((s: number, sess: CourtSessionDoc) => s + sess.totalCost, 0);
 
-            // Remaining = grandTotal - paidAmount (0 if fully paid)
+            // Remaining = all-sessions grandTotal - paidAmount (always live, never snapshot-based)
             const remainingTotals: Record<string, number> = {};
+            // Extra sessions added after payment was recorded
+            const extraSincePayment: Record<string, number> = {};
             for (const name of allNames) {
               const entry = paidMap[name];
-              const paidAmount = entry?.paidAmount ?? 0;
-              const isPaid = entry?.paid ?? false;
-              remainingTotals[name] = isPaid ? 0 : Math.max(0, grandTotals[name] - paidAmount);
+              const paidAmount    = entry?.paidAmount    ?? 0;
+              const snapshotTotal = entry?.snapshotTotal ?? 0;
+              remainingTotals[name] = Math.max(0, grandTotals[name] - paidAmount);
+              // Show indicator if new sessions were added after snapshot was taken
+              extraSincePayment[name] = snapshotTotal > 0 && grandTotals[name] > snapshotTotal
+                ? grandTotals[name] - snapshotTotal
+                : 0;
             }
             const totalRemaining = allNames.reduce((sum, name) => sum + remainingTotals[name], 0);
 
@@ -2849,7 +2858,18 @@ function PaymentScreen({ onBack, tournamentPlayers = [] }: { onBack: () => void;
                                     style={{ width: '90%', fontSize: 12, padding: '2px 4px', background: 'var(--bg2)', border: '1px solid var(--accent2)', borderRadius: 4, color: 'var(--text)', textAlign: 'right' }}
                                     onClick={(e: { stopPropagation: () => void }) => e.stopPropagation()}
                                   />
-                                ) : remainingTotals[name] === 0 ? '✓ Paid' : formatVND(remainingTotals[name])}
+                                ) : remainingTotals[name] === 0
+                                  ? <span style={{ color: 'var(--success)' }}>✓ Paid</span>
+                                  : <span>
+                                      {formatVND(remainingTotals[name])}
+                                      {extraSincePayment[name] > 0 && (
+                                        <span style={{ display: 'block', fontSize: 10, color: 'var(--warn)', fontWeight: 600, marginTop: 1 }}
+                                          title={`+${formatVND(extraSincePayment[name])} added after payment was recorded`}>
+                                          ⚠ +{formatVND(extraSincePayment[name])} new
+                                        </span>
+                                      )}
+                                    </span>
+                                }
                               </td>
                               <td style={{ ...cellStyle, textAlign: 'center', borderRight: 'none' }}>
                                 <input
@@ -2858,7 +2878,7 @@ function PaymentScreen({ onBack, tournamentPlayers = [] }: { onBack: () => void;
                                   title={isAdmin ? (paidMap[name]?.paid ? `${name} paid` : `${name} not paid`) : 'Admin login required to change paid status'}
                                   disabled={!isAdmin}
                                   style={{ width: 16, height: 16, cursor: isAdmin ? 'pointer' : 'not-allowed', accentColor: 'var(--success)', opacity: isAdmin ? 1 : 0.5 }}
-                                  onChange={(e: { target: HTMLInputElement }) => isAdmin && togglePaid(name, e.target.checked)}
+                                  onChange={(e: { target: HTMLInputElement }) => isAdmin && togglePaid(name, e.target.checked, grandTotals[name])}
                                 />
                               </td>
                             </>
