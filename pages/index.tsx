@@ -1920,6 +1920,7 @@ function PaymentScreen({ onBack, tournamentPlayers = [] }: { onBack: () => void;
   }
 
   async function confirmImport() {
+    if (!isAdmin) { alert('Admin login required to import sessions.'); return; }
     if (parsedRows.length === 0) return;
     setImporting(true);
     setImportResult(null);
@@ -2195,6 +2196,12 @@ function PaymentScreen({ onBack, tournamentPlayers = [] }: { onBack: () => void;
           {addMode === 'choose' && (
             <Card>
               <CardTitle>➕ New Session</CardTitle>
+              {!isAdmin && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'rgba(239,68,68,.1)', border: '1px solid rgba(239,68,68,.3)', borderRadius: 8, padding: '8px 12px', marginBottom: 14 }}>
+                  <span>🔒</span>
+                  <span style={{ fontSize: 13, color: 'var(--danger)' }}>Admin login required to add sessions.</span>
+                </div>
+              )}
               <p style={{ fontSize: 13, color: 'var(--text2)', marginBottom: 20, lineHeight: 1.6 }}>
                 How would you like to add this session?
               </p>
@@ -2424,10 +2431,10 @@ function PaymentScreen({ onBack, tournamentPlayers = [] }: { onBack: () => void;
 
                 <Btn
                   variant="primary" size="lg"
-                  disabled={scanPrevSaving || players.length === 0 || !scanPrevDate || scanPrevCourtFee === ''}
+                  disabled={!isAdmin || scanPrevSaving || players.length === 0 || !scanPrevDate || scanPrevCourtFee === ''}
                   onClick={submitPreview}
                 >
-                  {scanPrevSaving ? '⏳ Saving…' : '💾 Save Session'}
+                  {!isAdmin ? '🔒 Admin only' : scanPrevSaving ? '⏳ Saving…' : '💾 Save Session'}
                 </Btn>
               </Card>
             );
@@ -2530,10 +2537,10 @@ function PaymentScreen({ onBack, tournamentPlayers = [] }: { onBack: () => void;
                 </p>
               )}
               <Btn variant="primary" size="lg"
-                disabled={addSaving || addPlayers.length === 0 || !addDate || addCourtFee === '' || addNumShut === '' || addUnitPrice === ''}
+                disabled={!isAdmin || addSaving || addPlayers.length === 0 || !addDate || addCourtFee === '' || addNumShut === '' || addUnitPrice === ''}
                 onClick={submitAdd}
               >
-                {addSaving ? '⏳ Saving…' : '💾 Save Session'}
+                {!isAdmin ? '🔒 Admin only' : addSaving ? '⏳ Saving…' : '💾 Save Session'}
               </Btn>
             </Card>
           )}
@@ -2726,16 +2733,16 @@ function PaymentScreen({ onBack, tournamentPlayers = [] }: { onBack: () => void;
                           {summary.period}
                         </th>
                         {showGrandTotal && (
-                          <th rowSpan={3} style={{ ...headerStyle, color: 'var(--accent)', fontSize: 12, minWidth: 100, textAlign: 'center', verticalAlign: 'middle' }}>
+                          <th rowSpan={3} style={{ ...headerStyle, color: 'var(--accent)', fontSize: 12, minWidth: 100, textAlign: 'center', verticalAlign: 'middle', borderRight: summaryMode === 'monthly' ? '1px solid var(--border)' : 'none' }}>
                             Grand Total
                           </th>
                         )}
                         {summaryMode === 'monthly' && (
                           <>
-                            <th rowSpan={3} style={{ ...headerStyle, color: 'var(--warn)', fontSize: 12, minWidth: 100, textAlign: 'center', verticalAlign: 'middle' }}>
+                            <th rowSpan={3} style={{ ...headerStyle, color: 'var(--warn)', fontSize: 12, minWidth: 120, textAlign: 'center', verticalAlign: 'middle' }}>
                               Remaining
                             </th>
-                            <th rowSpan={3} style={{ ...headerStyle, color: 'var(--success)', fontSize: 12, minWidth: 70, textAlign: 'center', borderRight: 'none', verticalAlign: 'middle' }}>
+                            <th rowSpan={3} style={{ ...headerStyle, color: 'var(--success)', fontSize: 12, minWidth: 60, textAlign: 'center', borderRight: 'none', verticalAlign: 'middle' }}>
                               Paid
                             </th>
                           </>
@@ -2872,7 +2879,7 @@ function PaymentScreen({ onBack, tournamentPlayers = [] }: { onBack: () => void;
                               </td>
                             ))
                           )}
-                          {showGrandTotal && <td style={{ ...grandStyle, borderRight: 'none' }}>{formatVND(grandTotal)}</td>}
+                          {showGrandTotal && <td style={{ ...grandStyle }}>{formatVND(grandTotal)}</td>}
                           {summaryMode === 'monthly' && <td style={{ ...grandStyle }} />}
                           {summaryMode === 'monthly' && <td style={{ ...grandStyle, borderRight: 'none' }} />}
                         </tr>
@@ -3035,6 +3042,13 @@ function PaymentScreen({ onBack, tournamentPlayers = [] }: { onBack: () => void;
               <p style={{ fontWeight: 800, fontSize: 17 }}>✏️ Edit Session — {editingSession.sessionDate}</p>
               <button onClick={() => setEditingSession(null)} style={{ background: 'none', border: 'none', color: 'var(--text3)', fontSize: 22, cursor: 'pointer', lineHeight: 1 }}>✕</button>
             </div>
+
+            {!isAdmin && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'rgba(239,68,68,.1)', border: '1px solid rgba(239,68,68,.3)', borderRadius: 8, padding: '8px 12px', marginBottom: 14 }}>
+                <span>🔒</span>
+                <span style={{ fontSize: 13, color: 'var(--danger)' }}>View only — admin login required to save changes.</span>
+              </div>
+            )}
 
             {/* Date + Note */}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 14 }}>
@@ -3208,8 +3222,8 @@ function PaymentScreen({ onBack, tournamentPlayers = [] }: { onBack: () => void;
 
             <div style={{ display: 'flex', gap: 10 }}>
               <div style={{ flex: 1 }}>
-                <Btn variant="primary" size="lg" full disabled={editSaving} onClick={saveEditSession}>
-                  {editSaving ? '⏳ Saving…' : '💾 Save Changes'}
+                <Btn variant="primary" size="lg" full disabled={!isAdmin || editSaving} onClick={saveEditSession}>
+                  {!isAdmin ? '🔒 Admin only' : editSaving ? '⏳ Saving…' : '💾 Save Changes'}
                 </Btn>
               </div>
               <Btn variant="ghost" size="lg" onClick={() => setEditingSession(null)}>
@@ -3322,8 +3336,8 @@ function PaymentScreen({ onBack, tournamentPlayers = [] }: { onBack: () => void;
               )}
 
               <div style={{ marginTop: 14 }}>
-                <Btn variant="primary" disabled={importing} onClick={confirmImport}>
-                  {importing ? '⏳ Importing…' : `✅ Confirm Import (${parsedRows.length} session${parsedRows.length !== 1 ? 's' : ''})`}
+                <Btn variant="primary" disabled={!isAdmin || importing} onClick={confirmImport}>
+                  {!isAdmin ? '🔒 Admin only' : importing ? '⏳ Importing…' : `✅ Confirm Import (${parsedRows.length} session${parsedRows.length !== 1 ? 's' : ''})`}
                 </Btn>
               </div>
             </Card>
