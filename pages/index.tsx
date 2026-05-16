@@ -1598,8 +1598,9 @@ function PaymentScreen({ onBack, tournamentPlayers = [] }: { onBack: () => void;
   const [editNumShut,       setEditNumShut]       = useState('');
   const [editUnitPrice,     setEditUnitPrice]     = useState('');
   const [editNote,          setEditNote]          = useState('');
-  const [editHighlight,     setEditHighlight]     = useState(false);
-  const [editHighlightNote, setEditHighlightNote] = useState('');
+  const [editHighlight,      setEditHighlight]      = useState(false);
+  const [editHighlightNote,  setEditHighlightNote]  = useState('');
+  const [editBulkPurchase,   setEditBulkPurchase]   = useState(false);
   const [editSelected,      setEditSelected]      = useState<Record<string, boolean>>({});
   const [editSaving,        setEditSaving]        = useState(false);
   const [editResult,        setEditResult]        = useState<string | null>(null);
@@ -1648,6 +1649,7 @@ function PaymentScreen({ onBack, tournamentPlayers = [] }: { onBack: () => void;
   const [addSelected,     setAddSelected]     = useState<Record<string, boolean>>(
     () => Object.fromEntries(tournamentPlayers.map(n => [n, true]))
   );
+  const [addBulkPurchase, setAddBulkPurchase] = useState(false);
   const [addSaving,       setAddSaving]       = useState(false);
   const [addResult,       setAddResult]       = useState<string | null>(null);
 
@@ -1821,12 +1823,13 @@ function PaymentScreen({ onBack, tournamentPlayers = [] }: { onBack: () => void;
     setAddSaving(true);
     setAddResult(null);
     const row: ImportRow = {
-      date:                 addDate,
-      players:              addPlayers,
-      courtFee:             addCourtNum,
-      numShuttlecocks:      addShutNum,
-      shuttlecockUnitPrice: addUnitNum,
-      note:                 addNote.trim() || undefined,
+      date:                     addDate,
+      players:                  addPlayers,
+      courtFee:                 addCourtNum,
+      numShuttlecocks:          addShutNum,
+      shuttlecockUnitPrice:     addUnitNum,
+      note:                     addNote.trim() || undefined,
+      shuttlecocksBulkPurchase: addBulkPurchase,
     };
     const res = await fetch('/api/payment/sessions', {
       method: 'POST',
@@ -1841,6 +1844,7 @@ function PaymentScreen({ onBack, tournamentPlayers = [] }: { onBack: () => void;
       setAddNumShut('');
       setAddUnitPrice('');
       setAddNote('');
+      setAddBulkPurchase(false);
       setAddDate(new Date().toISOString().slice(0, 10));
       setAddSelected(Object.fromEntries(tournamentPlayers.map(n => [n, true])));
     } else {
@@ -1950,6 +1954,7 @@ function PaymentScreen({ onBack, tournamentPlayers = [] }: { onBack: () => void;
     setEditNote(s.note ?? '');
     setEditHighlight(s.highlight ?? false);
     setEditHighlightNote(s.highlightNote ?? '');
+    setEditBulkPurchase(s.shuttlecocksBulkPurchase ?? false);
     // Pre-select current players
     const sel: Record<string, boolean> = {};
     for (const p of s.players) sel[p.name] = true;
@@ -1967,14 +1972,15 @@ function PaymentScreen({ onBack, tournamentPlayers = [] }: { onBack: () => void;
       .filter((n, i, arr) => arr.indexOf(n) === i)
       .filter((n: string) => editSelected[n]);
     const body = {
-      date:                 editDate,
-      courtFee:             parseFloat(editCourtFee) || 0,
-      numShuttlecocks:      parseFloat(editNumShut) || 0,
-      shuttlecockUnitPrice: parseFloat(editUnitPrice) || 0,
-      players:              selectedPlayers,
-      note:                 editNote,
-      highlight:            editHighlight,
-      highlightNote:        editHighlightNote,
+      date:                     editDate,
+      courtFee:                 parseFloat(editCourtFee) || 0,
+      numShuttlecocks:          parseFloat(editNumShut) || 0,
+      shuttlecockUnitPrice:     parseFloat(editUnitPrice) || 0,
+      players:                  selectedPlayers,
+      note:                     editNote,
+      highlight:                editHighlight,
+      highlightNote:            editHighlightNote,
+      shuttlecocksBulkPurchase: editBulkPurchase,
     };
     const res = await fetch(`/api/payment/sessions/${String(editingSession._id)}`, {
       method: 'PATCH',
@@ -2473,6 +2479,22 @@ function PaymentScreen({ onBack, tournamentPlayers = [] }: { onBack: () => void;
                   <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text2)', display: 'block', marginBottom: 4 }}>💲 Price / shuttlecock (₫)</label>
                   <input type="number" min={0} className="input" style={{ width: '100%' }} placeholder="e.g. 15000" value={addUnitPrice} onChange={e => setAddUnitPrice(e.target.value)} />
                 </div>
+              </div>
+              <div style={{ background: 'var(--bg3)', borderRadius: 10, padding: '10px 14px', marginBottom: 14 }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', fontWeight: 600, fontSize: 13 }}>
+                  <input
+                    type="checkbox"
+                    checked={addBulkPurchase}
+                    onChange={e => setAddBulkPurchase(e.target.checked)}
+                    style={{ width: 18, height: 18 }}
+                  />
+                  🧺 Bulk / tube purchase
+                </label>
+                <p style={{ fontSize: 12, color: 'var(--text3)', margin: '6px 0 0 28px', lineHeight: 1.5 }}>
+                  {addBulkPurchase
+                    ? 'Shuttlecock cost will be split monthly by attendance, not per-session.'
+                    : 'Shuttlecock cost is split among players in this session only.'}
+                </p>
               </div>
               {addTotal > 0 && (
                 <div style={{ background: 'var(--bg3)', borderRadius: 10, padding: '10px 14px', marginBottom: 16, display: 'flex', gap: 20, flexWrap: 'wrap', alignItems: 'center' }}>
@@ -3096,6 +3118,24 @@ function PaymentScreen({ onBack, tournamentPlayers = [] }: { onBack: () => void;
                 <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text2)', display: 'block', marginBottom: 4 }}>💲 Price/shuttlecock (₫)</label>
                 <input type="number" min={0} className="input" style={{ width: '100%' }} value={editUnitPrice} onChange={({ target }: { target: HTMLInputElement }) => setEditUnitPrice(target.value)} />
               </div>
+            </div>
+
+            {/* Bulk purchase toggle */}
+            <div style={{ background: 'var(--bg3)', borderRadius: 10, padding: '12px 14px', marginBottom: 14 }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', fontWeight: 600, fontSize: 13 }}>
+                <input
+                  type="checkbox"
+                  checked={editBulkPurchase}
+                  onChange={({ target }: { target: HTMLInputElement }) => setEditBulkPurchase(target.checked)}
+                  style={{ width: 18, height: 18 }}
+                />
+                🧺 Bulk / tube purchase
+              </label>
+              <p style={{ fontSize: 12, color: 'var(--text3)', margin: '6px 0 0 28px', lineHeight: 1.5 }}>
+                {editBulkPurchase
+                  ? 'Shuttlecock cost will be split monthly by attendance, not per-session.'
+                  : 'Shuttlecock cost is split among players in this session only.'}
+              </p>
             </div>
 
             {/* Highlight toggle */}
