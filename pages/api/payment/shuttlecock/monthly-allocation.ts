@@ -1,26 +1,34 @@
 /**
  * GET /api/payment/shuttlecock/monthly-allocation
  *
- * Splits a fixed monthly shuttlecock purchase cost among players based on
- * how many sessions each player attended that month. Uses square-root
- * weighting so heavy attendees pay more, but the gap isn't extreme.
+ * Splits a fixed monthly shuttlecock tube cost among players weighted by
+ * how many bulk-purchase sessions each player attended (square-root weighting).
+ *
+ * "Bulk-purchase" sessions = days where you bought a whole tube for the month
+ * (shuttlecocksBulkPurchase: true). Sessions where you bought shuttlecocks
+ * individually are excluded — those are already split per-session in the
+ * normal payment flow.
+ *
+ * Square-root weighting: attending 4× as many sessions → pay 2× as much
+ * (not 4×), so the gap stays real but not extreme.
  *
  * Query params:
- *   ref              = "YYYY-MM"   (default: current month)
- *   totalCost        = number      VND spent on shuttlecocks this month
- *                                  (omit to auto-sum from session records)
+ *   ref        = "YYYY-MM"   (default: current month)
+ *   totalCost  = number      VND spent on the bulk tube purchase.
+ *                            If omitted, auto-sums shuttlecockTotal from
+ *                            bulk-purchase sessions in the period.
  *
  * Response:
  * {
  *   period: string;
  *   totalShuttlecockCost: number;
- *   totalSessions: number;         // total player-session appearances
+ *   totalSessions: number;
  *   players: {
  *     name: string;
- *     sessions: number;
- *     weight: number;              // √sessions, for transparency
+ *     sessions: number;            // sessions attended (bulk-purchase days only)
+ *     weight: number;              // √sessions — shown for transparency
  *     shuttleShare: number;        // exact VND (2 dp)
- *     shuttleShareRounded: number; // rounded to 1 000 VND
+ *     shuttleShareRounded: number; // rounded to nearest 1 000 VND
  *   }[];
  * }
  */
@@ -51,13 +59,17 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const month = Number(monStr);
   const period = `${MONTH_NAMES[month - 1]} ${year}`;
 
+  // Only consider sessions flagged as bulk-purchase
   const sessions: CourtSessionDoc[] = await client
     .db(DB)
     .collection<CourtSessionDoc>(COL)
-    .find({ year, month }, { projection: { players: 1, shuttlecockTotal: 1 } })
+    .find(
+      { year, month, shuttlecocksBulkPurchase: true },
+      { projection: { players: 1, shuttlecockTotal: 1 } }
+    )
     .toArray();
 
-  // Count how many sessions each player attended
+  // Count attendance and auto-sum cost from bulk sessions
   const sessionCountMap = new Map<string, number>();
   let autoShuttlecockTotal = 0;
 

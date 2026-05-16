@@ -54,6 +54,13 @@ export interface CourtSessionDoc {
   invoiceImages?: string[];
   /** Count of invoice images — injected by summary API (invoiceImages excluded for performance) */
   invoiceCount?: number;
+  /**
+   * True when shuttlecocks were bought as a bulk/tube purchase for the whole month.
+   * These sessions contribute session counts to the monthly allocation but their
+   * shuttlecock cost is NOT split per-session — it rolls into the monthly pool instead.
+   * False/absent = shuttlecocks were bought individually that day (cost split per-session as normal).
+   */
+  shuttlecocksBulkPurchase?: boolean;
   importedAt: Date;
 }
 
@@ -95,6 +102,8 @@ export interface ImportRow {
   numShuttlecocks: number;
   shuttlecockUnitPrice: number; // VND per shuttlecock
   note?: string;
+  /** See CourtSessionDoc.shuttlecocksBulkPurchase */
+  shuttlecocksBulkPurchase?: boolean;
 }
 
 /* ─────────────────────────────────────────────────────────────

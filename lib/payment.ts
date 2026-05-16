@@ -184,6 +184,7 @@ function parseCSV(text: string): ParseResult {
     numShut:    idx('num_shuttlecocks'),
     unitPrice:  idx('shuttlecock_unit_price'),
     note:       idx('note'),
+    bulkPurchase: idx('bulk_purchase'),
   };
 
   const required = ['date', 'players', 'court_fee', 'num_shuttlecocks', 'shuttlecock_unit_price'] as const;
@@ -207,6 +208,7 @@ function parseCSV(text: string): ParseResult {
       num_shuttlecocks:         cells[COL.numShut],
       shuttlecock_unit_price:   cells[COL.unitPrice],
       note:                     COL.note >= 0 ? cells[COL.note] : undefined,
+      bulk_purchase:            COL.bulkPurchase >= 0 ? cells[COL.bulkPurchase] : undefined,
     };
     const err = validateRawRow(raw, i);
     if (err) { errors.push(err); continue; }
@@ -243,6 +245,13 @@ function normaliseRow(r: Record<string, unknown>, _i: number): ImportRow {
   const players = typeof playersRaw === 'string'
     ? playersRaw.split(/[,;]/).map(s => s.trim()).filter(Boolean)
     : Array.isArray(playersRaw) ? (playersRaw as string[]).map(String) : [];
+
+  // bulk_purchase: accept true/false (JSON) or "true"/"1"/"yes" (CSV)
+  const bulkRaw = r.bulk_purchase ?? r.shuttlecocksBulkPurchase;
+  const shuttlecocksBulkPurchase = bulkRaw !== undefined
+    ? (bulkRaw === true || String(bulkRaw).toLowerCase() === 'true' || bulkRaw === '1' || String(bulkRaw).toLowerCase() === 'yes')
+    : undefined;
+
   return {
     date:                 String(r.date),
     players,
@@ -250,6 +259,7 @@ function normaliseRow(r: Record<string, unknown>, _i: number): ImportRow {
     numShuttlecocks:      Number(r.num_shuttlecocks),
     shuttlecockUnitPrice: Number(r.shuttlecock_unit_price),
     note:                 r.note ? String(r.note) : undefined,
+    shuttlecocksBulkPurchase,
   };
 }
 

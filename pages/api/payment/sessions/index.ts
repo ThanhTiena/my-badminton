@@ -97,18 +97,19 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       });
 
       return {
-        sessionDate:          row.date,
-        year:                 date.getFullYear(),
-        month:                date.getMonth() + 1,
-        week:                 getISOWeek(row.date),
-        courtFee:             row.courtFee,
-        numShuttlecocks:      row.numShuttlecocks,
-        shuttlecockUnitPrice: row.shuttlecockUnitPrice,
+        sessionDate:               row.date,
+        year:                      date.getFullYear(),
+        month:                     date.getMonth() + 1,
+        week:                      getISOWeek(row.date),
+        courtFee:                  row.courtFee,
+        numShuttlecocks:           row.numShuttlecocks,
+        shuttlecockUnitPrice:      row.shuttlecockUnitPrice,
         shuttlecockTotal,
         totalCost,
         players,
-        note:                 row.note,
-        importedAt:           new Date(),
+        note:                      row.note,
+        shuttlecocksBulkPurchase:  row.shuttlecocksBulkPurchase ?? false,
+        importedAt:                new Date(),
       };
     });
 
