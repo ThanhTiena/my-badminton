@@ -1,9 +1,10 @@
-import type { NextApiRequest, NextApiResponse } from 'next';
-import client from '@/lib/mongodb';
-import type { PlayerDoc } from '@/lib/models';
+// GET /api/rankings — public
+// Returns all players sorted by rankScore (desc), wins (desc), titles (desc)
 
-const DB  = 'smashtour';
-const COL = 'players';
+import type { NextApiRequest, NextApiResponse } from 'next';
+import { getDb } from '@/lib/db/client';
+import { COLLECTIONS } from '@/lib/db/constants';
+import type { PlayerDoc } from '@/lib/models';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== 'GET') {
@@ -11,16 +12,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(405).end();
   }
 
-  const db  = client.db(DB);
-  const col = db.collection<PlayerDoc>(COL);
-
-  // Return all players sorted by rankScore desc, then wins desc as tie-break
-  const raw = await col
+  const raw = await getDb()
+    .collection<PlayerDoc>(COLLECTIONS.PLAYERS)
     .find({})
     .sort({ rankScore: -1, 'stats.wins': -1, 'stats.titles': -1 })
     .toArray();
 
-  // Back-fill missing fields for players created before the ranking update
   const players = raw.map(p => ({
     ...p,
     rankScore: p.rankScore ?? 0,

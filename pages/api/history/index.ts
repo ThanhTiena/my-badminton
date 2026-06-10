@@ -1,17 +1,18 @@
-import type { NextApiRequest, NextApiResponse } from 'next';
-import client from '@/lib/mongodb';
-import type { TournamentHistoryDoc, PlayerDoc } from '@/lib/models';
-import { computeDeltas, computeRankScore } from '@/lib/scoring';
+// GET  /api/history — public (tournament history)
+// POST /api/history — admin only (save completed tournament + update player stats)
 
-const DB          = 'smashtour';
-const COL         = 'tournament_history';
-const PLAYERS_COL = 'players';
+import type { NextApiRequest, NextApiResponse } from 'next';
+import { getDb } from '@/lib/db/client';
+import { COLLECTIONS } from '@/lib/db/constants';
+import { requireAdmin } from '@/lib/auth/middleware';
+import { computeDeltas, computeRankScore } from '@/lib/scoring';
+import type { TournamentHistoryDoc, PlayerDoc } from '@/lib/models';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-  const db  = client.db(DB);
-  const col = db.collection<TournamentHistoryDoc>(COL);
+  const db  = getDb();
+  const col = db.collection<TournamentHistoryDoc>(COLLECTIONS.TOURNAMENT_HISTORY);
 
-  /* ── GET — list tournaments ── */
+  // ── GET — public ──────────────────────────────────────────────────────────
   if (req.method === 'GET') {
     const limit   = Math.min(Number(req.query.limit ?? 20), 100);
     const skip    = Number(req.query.skip ?? 0);
@@ -20,10 +21,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(200).json({ history, total });
   }
 
-  /* ── POST — save completed tournament & update all player scores ── */
+  // ── POST — admin only ─────────────────────────────────────────────────────
   if (req.method === 'POST') {
-    const body = req.body as TournamentHistoryDoc;
+    const admin = await requireAdmin(req, res);
+    if (!admin) return;
 
+    const body = req.body as TournamentHistoryDoc;
     const doc: TournamentHistoryDoc = {
       ...body,
       createdAt:   new Date(),
@@ -31,20 +34,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     };
     const result = await col.insertOne(doc);
 
-    // ── Compute per-player stat deltas ──
-    const deltas = computeDeltas(
-      body.matches,
-      body.champion,
-      body.runnerUp,
-      body.participants,
-    );
-
-    // ── Apply deltas to each player in MongoDB ──
-    const playerCol = db.collection<PlayerDoc>(PLAYERS_COL);
+    // Compute per-player stat deltas and update scores
+    const deltas      = computeDeltas(body.matches, body.champion, body.runnerUp, body.participants);
+    const playerCol   = db.collection<PlayerDoc>(COLLECTIONS.PLAYERS);
 
     for (const [name, delta] of Array.from(deltas.entries())) {
-      // Fetch current stats so we can recompute rankScore
-      const player = await playerCol.findOne({ name: { $regex: `^${name}$`, $options: 'i' } });
+      // ReDoS-safe lookup using collation
+      const player = await playerCol.findOne(
+        { name },
+        { collation: { locale: 'vi', strength: 2 } }
+      );
       if (!player) continue;
 
       const newStats: PlayerDoc['stats'] = {
@@ -57,17 +56,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         pointsConceded:    (player.stats?.pointsConceded    ?? 0) + delta.pointsConceded,
       };
 
-      const rankScore = computeRankScore(newStats);
-
       await playerCol.updateOne(
-        { name: { $regex: `^${name}$`, $options: 'i' } },
+        { name },
         {
           $set: {
-            stats:          newStats,
-            rankScore,
-            rankUpdatedAt:  new Date(),
+            stats:         newStats,
+            rankScore:     computeRankScore(newStats),
+            rankUpdatedAt: new Date(),
           },
         },
+        { collation: { locale: 'vi', strength: 2 } }
       );
     }
 
@@ -75,5 +73,5 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   res.setHeader('Allow', ['GET', 'POST']);
-  res.status(405).end();
+  return res.status(405).end();
 }

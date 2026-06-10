@@ -1,23 +1,19 @@
-/**
- * GET  /api/bets?matchId=m3          — bets for one match
- * GET  /api/bets                     — all bets (for history screen), sorted newest first
- * POST /api/bets                     — place a new bet
- */
+// GET  /api/bets?matchId=xyz  — public (visitors can view bets)
+// GET  /api/bets              — public (all bets)
+// POST /api/bets              — public (visitors can place bets — confirmed decision)
+
 import type { NextApiRequest, NextApiResponse } from 'next';
-import client from '@/lib/mongodb';
+import { getDb } from '@/lib/db/client';
+import { COLLECTIONS } from '@/lib/db/constants';
 import type { BetDoc } from '@/lib/models';
 
-const DB  = 'smashtour';
-const COL = 'bets';
-
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-  const col = client.db(DB).collection<BetDoc>(COL);
+  const col = getDb().collection<BetDoc>(COLLECTIONS.BETS);
 
   if (req.method === 'GET') {
     const { matchId } = req.query as { matchId?: string };
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const filter: Record<string, any> = matchId ? { matchId } : {};
-    const bets = await col.find(filter).sort({ createdAt: -1 }).toArray();
+    const filter = matchId ? { matchId } : {};
+    const bets   = await col.find(filter).sort({ createdAt: -1 }).toArray();
     return res.status(200).json(bets);
   }
 
@@ -26,7 +22,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       req.body as Partial<BetDoc>;
 
     if (!matchId?.trim() || !bettor?.trim() || !pick?.trim()) {
-      return res.status(400).json({ error: 'matchId, bettor, and pick are required' });
+      return res.status(400).json({ error: 'matchId, bettor, and pick are required.' });
     }
 
     const doc: Omit<BetDoc, '_id'> = {
@@ -44,5 +40,5 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   res.setHeader('Allow', ['GET', 'POST']);
-  res.status(405).end();
+  return res.status(405).end();
 }

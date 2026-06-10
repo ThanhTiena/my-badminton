@@ -1,35 +1,29 @@
-/**
- * GET  /api/payment/paid?period=YYYY-MM
- *   Response: { [playerName]: { paid: boolean; paidAmount: number; snapshotTotal: number } }
- *
- * POST /api/payment/paid
- *   Body: { period: string; playerName: string; paid: boolean; paidAmount?: number; snapshotTotal?: number }
- *
- *   snapshotTotal = the player's grandTotal at the time payment was recorded.
- *   remaining = snapshotTotal - paidAmount  (stable even if new sessions are added later)
- *   If new sessions add to grandTotal after snapshot, a "⚠ +X more" indicator appears.
- */
-import type { NextApiRequest, NextApiResponse } from 'next';
-import client from '@/lib/mongodb';
+// GET  /api/payment/paid?period=YYYY-MM — admin only
+// POST /api/payment/paid               — admin only
 
-const DB  = 'smashtour';
-const COL = 'payment_paid';
+import type { NextApiRequest, NextApiResponse } from 'next';
+import { getDb } from '@/lib/db/client';
+import { COLLECTIONS } from '@/lib/db/constants';
+import { requireAdmin } from '@/lib/auth/middleware';
 
 interface PaidDoc {
   period: string;
   playerName: string;
   paid: boolean;
   paidAmount: number;
-  snapshotTotal: number;  // grandTotal at time of payment record
+  snapshotTotal: number;
   updatedAt: Date;
 }
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-  const col = client.db(DB).collection<PaidDoc>(COL);
+  const admin = await requireAdmin(req, res);
+  if (!admin) return;
+
+  const col = getDb().collection<PaidDoc>(COLLECTIONS.PAYMENT_PAID);
 
   if (req.method === 'GET') {
     const { period } = req.query as { period?: string };
-    if (!period) return res.status(400).json({ error: '"period" query param required' });
+    if (!period) return res.status(400).json({ error: '"period" query param required.' });
     const docs = await col.find({ period }).toArray();
     const map: Record<string, { paid: boolean; paidAmount: number; snapshotTotal: number }> = {};
     for (const doc of docs) {
@@ -48,21 +42,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       paidAmount?: number; snapshotTotal?: number;
     };
     if (!period || !playerName || typeof paid !== 'boolean') {
-      return res.status(400).json({ error: '"period", "playerName", and "paid" are required' });
+      return res.status(400).json({ error: '"period", "playerName", and "paid" are required.' });
     }
     await col.updateOne(
       { period, playerName },
-      { $set: {
-        period, playerName, paid,
-        paidAmount:    paidAmount    ?? 0,
-        snapshotTotal: snapshotTotal ?? 0,
-        updatedAt: new Date(),
-      }},
-      { upsert: true },
+      { $set: { period, playerName, paid, paidAmount: paidAmount ?? 0, snapshotTotal: snapshotTotal ?? 0, updatedAt: new Date() } },
+      { upsert: true }
     );
     return res.status(200).json({ ok: true });
   }
 
   res.setHeader('Allow', ['GET', 'POST']);
-  res.status(405).end();
+  return res.status(405).end();
 }

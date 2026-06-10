@@ -1,35 +1,11 @@
-/**
- * GET /api/payment/summary
- *
- * Aggregates session data for a given period and returns how much
- * each player owes in total.
- *
- * Query params:
- *   mode = "monthly" | "weekly" | "range"   (default: "monthly")
- *   ref  = "YYYY-MM"              for monthly  (e.g. "2026-03")
- *        = "YYYY-Www"             for weekly   (e.g. "2026-W13")
- *   from = "YYYY-MM-DD"           for range (inclusive start)
- *   to   = "YYYY-MM-DD"           for range (inclusive end)
- *
- * Response:
- * {
- *   period: string;             // human label e.g. "March 2026" or "Week 13 / 2026"
- *   totalCost: number;          // sum of all session totalCosts in period
- *   sessions: CourtSessionDoc[];
- *   players: {
- *     name: string;
- *     totalOwed: number;        // sum of amountOwed across sessions
- *     totalOwedRounded: number; // sum of amountOwedRounded
- *     sessionCount: number;
- *   }[];
- * }
- */
-import type { NextApiRequest, NextApiResponse } from 'next';
-import client from '@/lib/mongodb';
-import type { CourtSessionDoc } from '@/lib/models';
+// GET /api/payment/summary — admin only
+// Aggregates session data for a period and returns how much each player owes.
 
-const DB  = 'smashtour';
-const COL = 'court_sessions';
+import type { NextApiRequest, NextApiResponse } from 'next';
+import { getDb } from '@/lib/db/client';
+import { COLLECTIONS } from '@/lib/db/constants';
+import { requireAdmin } from '@/lib/auth/middleware';
+import type { CourtSessionDoc } from '@/lib/models';
 
 const MONTH_NAMES = [
   'January','February','March','April','May','June',
@@ -42,18 +18,20 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(405).end();
   }
 
-  const { mode = 'monthly', ref, from, to } = req.query as { mode?: string; ref?: string; from?: string; to?: string };
+  const admin = await requireAdmin(req, res);
+  if (!admin) return;
+
+  const { mode = 'monthly', ref, from, to } = req.query as {
+    mode?: string; ref?: string; from?: string; to?: string;
+  };
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const filter: Record<string, any> = {};
   let period = '';
 
   if (mode === 'range' && from && to && /^\d{4}-\d{2}-\d{2}$/.test(from) && /^\d{4}-\d{2}-\d{2}$/.test(to)) {
-    // Date-range filter: sessionDate >= from, sessionDate <= to
     filter.sessionDate = { $gte: from, $lte: to };
-    const fmt = (d: string) => {
-      const [y, m, day] = d.split('-');
-      return `${day}/${m}/${y}`;
-    };
+    const fmt = (d: string) => { const [y, m, day] = d.split('-'); return `${day}/${m}/${y}`; };
     period = from === to ? fmt(from) : `${fmt(from)} – ${fmt(to)}`;
   } else if (mode === 'weekly' && ref && /^\d{4}-W\d{1,2}$/.test(ref)) {
     const [yearStr, wPart] = ref.split('-W');
@@ -61,7 +39,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     filter.week = Number(wPart);
     period = `Week ${wPart} / ${yearStr}`;
   } else {
-    // Monthly (default) — fall back to current month if ref absent
     const refStr = (ref && /^\d{4}-\d{2}$/.test(ref)) ? ref : new Date().toISOString().slice(0, 7);
     const [yearStr, monStr] = refStr.split('-');
     filter.year  = Number(yearStr);
@@ -70,22 +47,20 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const rawSessions: any[] = await client
-    .db(DB)
-    .collection<CourtSessionDoc>(COL)
+  const rawSessions: any[] = await getDb()
+    .collection<CourtSessionDoc>(COLLECTIONS.COURT_SESSIONS)
     .aggregate([
       { $match: filter },
       { $sort: { sessionDate: 1 } },
       { $addFields: { invoiceCount: { $size: { $ifNull: ['$invoiceImages', []] } } } },
-      { $project: { invoiceImages: 0 } },
+      { $project: { invoiceImages: 0 } },   // strip base64 blobs from response
     ])
     .toArray();
+
   const sessions: CourtSessionDoc[] = rawSessions;
-
-  // Aggregate per-player totals
   const playerMap = new Map<string, { totalOwed: number; totalOwedRounded: number; sessionCount: number }>();
-
   let totalCost = 0;
+
   for (const s of sessions) {
     totalCost += s.totalCost;
     for (const p of s.players) {

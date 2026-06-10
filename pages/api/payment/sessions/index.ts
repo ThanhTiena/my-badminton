@@ -1,37 +1,24 @@
-/**
- * GET  /api/payment/sessions
- *   Query params (all optional):
- *     month=YYYY-MM      filter by year+month
- *     week=YYYY-Www      filter by year+ISO week  (e.g. 2026-W13)
- *     skip=0  limit=50
- *   Returns: { sessions: CourtSessionDoc[]; total: number }
- *
- * POST /api/payment/sessions
- *   Body: ImportRow[]  (parsed by the client, validated here)
- *   Fetches smash-weight configs, computes amounts, persists all rows.
- *   Returns: { inserted: number; sessions: CourtSessionDoc[] }
- *
- * DELETE /api/payment/sessions
- *   Body: { ids: string[] }
- *   Bulk-delete sessions by ID (undo import).
- *   Returns: { deleted: number }
- */
+// GET    /api/payment/sessions — admin only (payment data is private)
+// POST   /api/payment/sessions — admin only (import rows)
+// DELETE /api/payment/sessions — admin only (bulk delete)
+
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { ObjectId } from 'mongodb';
-import client from '@/lib/mongodb';
+import { getDb } from '@/lib/db/client';
+import { COLLECTIONS } from '@/lib/db/constants';
+import { requireAdmin } from '@/lib/auth/middleware';
 import type { CourtSessionDoc, PaymentConfigDoc, ImportRow } from '@/lib/models';
 import { computeSessionAmounts, getISOWeek } from '@/lib/payment';
 
-const DB      = 'smashtour';
-const COL     = 'court_sessions';
-const CFG_COL = 'payment_configs';
-
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-  const db      = client.db(DB);
-  const col     = db.collection<CourtSessionDoc>(COL);
-  const cfgCol  = db.collection<PaymentConfigDoc>(CFG_COL);
+  const admin = await requireAdmin(req, res);
+  if (!admin) return;
 
-  /* ── GET ─────────────────────────────────────────────────── */
+  const db     = getDb();
+  const col    = db.collection<CourtSessionDoc>(COLLECTIONS.COURT_SESSIONS);
+  const cfgCol = db.collection<PaymentConfigDoc>(COLLECTIONS.PAYMENT_CONFIG);
+
+  // ── GET ──────────────────────────────────────────────────────────────────
   if (req.method === 'GET') {
     const { month, week, skip = '0', limit = '50' } = req.query as Record<string, string>;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -58,14 +45,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(200).json({ sessions, total });
   }
 
-  /* ── POST — import rows ──────────────────────────────────── */
+  // ── POST — import rows ───────────────────────────────────────────────────
   if (req.method === 'POST') {
     const body = req.body as ImportRow[];
     if (!Array.isArray(body) || body.length === 0) {
-      return res.status(400).json({ error: 'Body must be a non-empty array of import rows' });
+      return res.status(400).json({ error: 'Body must be a non-empty array of import rows.' });
     }
 
-    // Load all configs into a map for O(1) lookup
     const allConfigs = await cfgCol.find({}).toArray();
     const cfgMap = new Map<string, { smashWeight: number; courtRate: number; shuttleRate: number }>();
     for (const cfg of allConfigs) {
@@ -78,7 +64,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     const docs: CourtSessionDoc[] = body.map(row => {
       const date = new Date(row.date);
-
       const playersWithWeight = row.players.map(name => {
         const cfg = cfgMap.get(name.toLowerCase());
         return {
@@ -88,46 +73,41 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           shuttleRate: cfg?.shuttleRate ?? 1.0,
         };
       });
-
       const { shuttlecockTotal, totalCost, players } = computeSessionAmounts({
-        players:             playersWithWeight,
-        courtFee:            row.courtFee,
-        numShuttlecocks:     row.numShuttlecocks,
+        players:              playersWithWeight,
+        courtFee:             row.courtFee,
+        numShuttlecocks:      row.numShuttlecocks,
         shuttlecockUnitPrice: row.shuttlecockUnitPrice,
       });
-
       return {
-        sessionDate:               row.date,
-        year:                      date.getFullYear(),
-        month:                     date.getMonth() + 1,
-        week:                      getISOWeek(row.date),
-        courtFee:                  row.courtFee,
-        numShuttlecocks:           row.numShuttlecocks,
-        shuttlecockUnitPrice:      row.shuttlecockUnitPrice,
+        sessionDate:              row.date,
+        year:                     date.getFullYear(),
+        month:                    date.getMonth() + 1,
+        week:                     getISOWeek(row.date),
+        courtFee:                 row.courtFee,
+        numShuttlecocks:          row.numShuttlecocks,
+        shuttlecockUnitPrice:     row.shuttlecockUnitPrice,
         shuttlecockTotal,
         totalCost,
         players,
-        note:                      row.note,
-        shuttlecocksBulkPurchase:  row.shuttlecocksBulkPurchase ?? false,
-        importedAt:                new Date(),
+        note:                     row.note,
+        shuttlecocksBulkPurchase: row.shuttlecocksBulkPurchase ?? false,
+        importedAt:               new Date(),
       };
     });
 
     const result   = await col.insertMany(docs);
-    const inserted = result.insertedCount;
-
-    // Return the freshly inserted docs (with _id)
     const ids      = Object.values(result.insertedIds);
     const sessions = await col.find({ _id: { $in: ids } }).sort({ sessionDate: 1 }).toArray();
 
-    return res.status(201).json({ inserted, sessions });
+    return res.status(201).json({ inserted: result.insertedCount, sessions });
   }
 
-  /* ── DELETE — bulk remove ────────────────────────────────── */
+  // ── DELETE — bulk remove ─────────────────────────────────────────────────
   if (req.method === 'DELETE') {
     const { ids } = req.body as { ids?: string[] };
     if (!Array.isArray(ids) || ids.length === 0) {
-      return res.status(400).json({ error: '"ids" must be a non-empty string array' });
+      return res.status(400).json({ error: '"ids" must be a non-empty string array.' });
     }
     const objectIds = ids.map(id => new ObjectId(id));
     const result    = await col.deleteMany({ _id: { $in: objectIds } });
@@ -135,5 +115,5 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   res.setHeader('Allow', ['GET', 'POST', 'DELETE']);
-  res.status(405).end();
+  return res.status(405).end();
 }
