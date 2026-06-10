@@ -10,6 +10,7 @@ import { ObjectId } from 'mongodb';
 import { getDb } from '@/lib/db/client';
 import { COLLECTIONS } from '@/lib/db/constants';
 import { requireAdmin } from '@/lib/auth/middleware';
+import { put } from '@vercel/blob';
 import type { CourtSessionDoc, PaymentConfigDoc, ImportRow } from '@/lib/models';
 import { computeSessionAmounts, getISOWeek } from '@/lib/payment';
 
@@ -108,7 +109,36 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     if (body.note !== undefined)                    $set.note                      = body.note;
     if (body.highlight !== undefined)               $set.highlight                 = body.highlight;
     if (body.highlightNote !== undefined)           $set.highlightNote             = body.highlightNote;
-    if (body.invoiceImages !== undefined)           $set.invoiceImages             = body.invoiceImages ?? [];
+    if (body.invoiceImages !== undefined) {
+      const urls: string[] = [];
+      const images = body.invoiceImages ?? [];
+      for (const img of images) {
+        if (img.startsWith('data:image/')) {
+          const match = img.match(/^data:([^;]+);base64,(.+)$/);
+          if (match) {
+            const contentType = match[1];
+            const base64Data = match[2];
+            const buffer = Buffer.from(base64Data, 'base64');
+            let ext = 'jpg';
+            if (contentType.includes('png')) ext = 'png';
+            else if (contentType.includes('webp')) ext = 'webp';
+            else if (contentType.includes('gif')) ext = 'gif';
+            
+            const filename = `invoice-${Date.now()}-${Math.random().toString(36).substring(2, 7)}.${ext}`;
+            const blob = await put(filename, buffer, {
+              access: 'public',
+              contentType,
+            });
+            urls.push(blob.url);
+          } else {
+            urls.push(img);
+          }
+        } else {
+          urls.push(img);
+        }
+      }
+      $set.invoiceImages = urls;
+    }
     if (body.shuttlecocksBulkPurchase !== undefined) $set.shuttlecocksBulkPurchase = body.shuttlecocksBulkPurchase;
 
     // Per-player paid toggle: update a single player's paid flag inside the players array

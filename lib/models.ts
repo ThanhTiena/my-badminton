@@ -216,6 +216,8 @@ export interface PlayerDoc {
   _id?: ObjectId;
   name: string;
   group: 'pro' | 'beg';
+  active?: boolean;
+  archivedAt?: Date;
   createdAt: Date;
 
   /** Raw career counters — incremented after every tournament */

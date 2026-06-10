@@ -14,7 +14,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   const raw = await getDb()
     .collection<PlayerDoc>(COLLECTIONS.PLAYERS)
-    .find({})
+    .find({ active: { $ne: false } })
     .sort({ rankScore: -1, 'stats.wins': -1, 'stats.titles': -1 })
     .toArray();
 

@@ -35,7 +35,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   if (req.method === 'DELETE') {
-    await col.deleteOne({ _id });
+    await col.updateOne({ _id }, { $set: { active: false, archivedAt: new Date() } });
     return res.status(200).json({ ok: true });
   }
 

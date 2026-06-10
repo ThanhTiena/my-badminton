@@ -13,7 +13,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   // ── GET — public ──────────────────────────────────────────────────────────
   if (req.method === 'GET') {
-    const players = await col.find({}).sort({ name: 1 }).toArray();
+    const { all } = req.query as { all?: string };
+    const filter = all === 'true' ? {} : { active: { $ne: false } };
+    const players = await col.find(filter).sort({ name: 1 }).toArray();
     return res.status(200).json(players);
   }
 
@@ -37,6 +39,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const doc: PlayerDoc = {
       name: name.trim(),
       group,
+      active: true,
       createdAt: new Date(),
       stats: {
         tournamentsPlayed: 0,
