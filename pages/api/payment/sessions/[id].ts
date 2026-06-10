@@ -7,13 +7,11 @@ export const config = { api: { bodyParser: { sizeLimit: '20mb' } } };
 
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { ObjectId } from 'mongodb';
-import client from '@/lib/mongodb';
+import { getDb } from '@/lib/db/client';
+import { COLLECTIONS } from '@/lib/db/constants';
+import { requireAdmin } from '@/lib/auth/middleware';
 import type { CourtSessionDoc, PaymentConfigDoc, ImportRow } from '@/lib/models';
 import { computeSessionAmounts, getISOWeek } from '@/lib/payment';
-
-const DB      = 'smashtour';
-const COL     = 'court_sessions';
-const CFG_COL = 'payment_configs';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   const { id } = req.query as { id: string };
@@ -22,13 +20,18 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   try { oid = new ObjectId(id); }
   catch { return res.status(400).json({ error: 'Invalid session id' }); }
 
-  const col = client.db(DB).collection<CourtSessionDoc>(COL);
+  const db = getDb();
+  const col = db.collection<CourtSessionDoc>(COLLECTIONS.COURT_SESSIONS);
 
   if (req.method === 'GET') {
     const doc = await col.findOne({ _id: oid });
     if (!doc) return res.status(404).json({ error: 'Session not found' });
     return res.status(200).json(doc);
   }
+
+  // Auth guard for write operations
+  const admin = await requireAdmin(req, res);
+  if (!admin) return;
 
   if (req.method === 'PATCH') {
     const body = req.body as Partial<ImportRow & {
@@ -61,7 +64,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       const playerNames     = (body.players && body.players.length > 0) ? body.players : existing.players.map(p => p.name);
 
       // Re-fetch configs
-      const cfgCol  = client.db(DB).collection<PaymentConfigDoc>(CFG_COL);
+      const cfgCol  = db.collection<PaymentConfigDoc>(COLLECTIONS.PAYMENT_CONFIG);
       const allCfgs = await cfgCol.find({}).toArray();
       const cfgMap  = new Map<string, { smashWeight: number; courtRate: number; shuttleRate: number }>();
       for (const cfg of allCfgs) {

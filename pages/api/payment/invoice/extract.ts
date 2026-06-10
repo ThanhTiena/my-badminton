@@ -10,6 +10,7 @@ export const config = { api: { bodyParser: { sizeLimit: '20mb' } } };
 
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { Mistral } from '@mistralai/mistralai';
+import { requireAdmin } from '@/lib/auth/middleware';
 
 const PROMPT = `You are an expert at reading Vietnamese badminton court invoices.
 The image may contain ONE invoice or MULTIPLE invoices side by side / stacked.
@@ -190,9 +191,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(405).end();
   }
 
-  if (req.cookies['admin_session'] !== '1') {
-    return res.status(401).json({ error: 'Admin login required to use invoice scan' });
-  }
+  const admin = await requireAdmin(req, res);
+  if (!admin) return;
 
   if (!process.env.MISTRAL_API_KEY) {
     return res.status(500).json({ error: 'MISTRAL_API_KEY is not configured' });

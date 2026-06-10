@@ -33,12 +33,10 @@
  * }
  */
 import type { NextApiRequest, NextApiResponse } from 'next';
-import client from '@/lib/mongodb';
+import { getDb } from '@/lib/db/client';
+import { COLLECTIONS } from '@/lib/db/constants';
 import type { CourtSessionDoc } from '@/lib/models';
 import { allocateMonthlyShuttlecocks } from '@/business/shuttlecock-allocation';
-
-const DB  = 'smashtour';
-const COL = 'court_sessions';
 
 const MONTH_NAMES = [
   'January','February','March','April','May','June',
@@ -60,9 +58,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const period = `${MONTH_NAMES[month - 1]} ${year}`;
 
   // Only consider sessions flagged as bulk-purchase
-  const sessions: CourtSessionDoc[] = await client
-    .db(DB)
-    .collection<CourtSessionDoc>(COL)
+  const sessions: CourtSessionDoc[] = await getDb()
+    .collection<CourtSessionDoc>(COLLECTIONS.COURT_SESSIONS)
     .find(
       { year, month, shuttlecocksBulkPurchase: true },
       { projection: { players: 1, shuttlecockTotal: 1 } }
