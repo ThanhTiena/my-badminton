@@ -80,7 +80,7 @@ function Confetti({ active }: { active: boolean }) {
   const [pieces, setPieces] = useState<React.CSSProperties[]>([]);
   useEffect(() => {
     if (!active) { setPieces([]); return; }
-    const colors = ['#39ff14','#00e5ff','#ff6b35','#f59e0b','#a78bfa','#ec4899','#fff'];
+    const colors = ['#7C3AED','#EC4899','#0EA5E9','#06B6D4','#F59E0B','#10B981','#FF6B6B','#ffffff'];
     setPieces(Array.from({ length: 120 }, () => ({
       left: `${Math.random() * 100}vw`,
       backgroundColor: colors[Math.floor(Math.random() * colors.length)],
@@ -1520,10 +1520,10 @@ function PaymentScreen({ onBack, tournamentPlayers = [] }: { onBack: () => void;
   const [cpSuccess,     setCpSuccess]     = useState('');
 
   useEffect(() => {
-    fetch('/api/auth/me').then(r => r.json()).then((d: { isAdmin: boolean }) => {
-      setIsAdmin(d.isAdmin);
+    fetch('/api/auth/me').then(r => r.json()).then((d: { authenticated: boolean; username?: string }) => {
+      setIsAdmin(d.authenticated);
       setAuthChecked(true);
-    });
+    }).catch(() => setAuthChecked(true));
   }, []);
 
   async function handleLogin() {
@@ -3749,6 +3749,72 @@ export default function TournamentApp() {
   const [confettiActive,  setConfettiActive]  = useState(false);
   const [appLoading,      setAppLoading]      = useState(true);   // true while restoring from DB
 
+  // ── Top-level auth state (shared with sidebar + PaymentScreen) ──
+  const [isAdmin,       setIsAdmin]       = useState(false);
+  const [authChecked,   setAuthChecked]   = useState(false);   // eslint-disable-line @typescript-eslint/no-unused-vars
+  const [showLogin,     setShowLogin]     = useState(false);
+  const [loginUser,     setLoginUser]     = useState('');
+  const [loginPass,     setLoginPass]     = useState('');
+  const [loginError,    setLoginError]    = useState('');
+  const [loginLoading,  setLoginLoading]  = useState(false);
+  const [showChangePw,  setShowChangePw]  = useState(false);
+  const [cpCurrent,     setCpCurrent]     = useState('');
+  const [cpNew,         setCpNew]         = useState('');
+  const [cpConfirm,     setCpConfirm]     = useState('');
+  const [cpError,       setCpError]       = useState('');
+  const [cpSuccess,     setCpSuccess]     = useState('');
+
+  useEffect(() => {
+    fetch('/api/auth/me').then(r => r.json()).then((d: { authenticated: boolean }) => {
+      setIsAdmin(d.authenticated);
+      setAuthChecked(true);
+    }).catch(() => setAuthChecked(true));
+  }, []);
+
+  async function handleLogin() {
+    setLoginLoading(true);
+    setLoginError('');
+    const r = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: loginUser, password: loginPass }),
+    });
+    setLoginLoading(false);
+    if (r.ok) {
+      setIsAdmin(true);
+      setShowLogin(false);
+      setLoginUser('');
+      setLoginPass('');
+    } else {
+      const d = await r.json();
+      setLoginError(d.error ?? 'Login failed');
+    }
+  }
+
+  async function handleLogout() {
+    await fetch('/api/auth/logout', { method: 'POST' });
+    setIsAdmin(false);
+  }
+
+  async function handleChangePw() {
+    setCpError('');
+    setCpSuccess('');
+    if (cpNew !== cpConfirm) { setCpError('New passwords do not match.'); return; }
+    if (cpNew.length < 8) { setCpError('New password must be at least 8 characters.'); return; }
+    const r = await fetch('/api/auth/change-password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ currentPassword: cpCurrent, newPassword: cpNew }),
+    });
+    if (r.ok) {
+      setCpSuccess('Password changed successfully!');
+      setCpCurrent(''); setCpNew(''); setCpConfirm('');
+    } else {
+      const d = await r.json();
+      setCpError(d.error ?? 'Failed to change password.');
+    }
+  }
+
   // Debounce timer ref for auto-save
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -4062,83 +4128,278 @@ export default function TournamentApp() {
 
   if (appLoading) {
     return (
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', flexDirection: 'column', gap: 16 }}>
-        <span style={{ fontSize: 40 }}>🏸</span>
-        <p style={{ color: 'var(--text2)', fontSize: 15 }}>Resuming tournament…</p>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', flexDirection: 'column', gap: 16, background: 'var(--bg)' }}>
+        <span style={{ fontSize: 48 }}>🏸</span>
+        <p style={{ color: 'var(--primary)', fontSize: 15, fontWeight: 600 }}>Resuming session…</p>
       </div>
     );
   }
+
+  // Nav items definition
+  const navPublic = [
+    { id: 'rankings', icon: '🏅', label: 'Rankings' },
+    { id: 'history',  icon: '📜', label: 'History'  },
+    { id: 'bets',     icon: '🎲', label: 'Bets'     },
+  ];
+  const navAdmin = [
+    { id: 'roster',     icon: '👥', label: 'Players'    },
+    { id: 'tournament', icon: '🏆', label: 'Tournament'  },
+    { id: 'payment',    icon: '💰', label: 'Payments'    },
+  ];
+
+  const activeView = view === 'setup' || view === 'champion' ? 'tournament' : view;
 
   return (
     <>
       <Confetti active={confettiActive} />
 
-      <header className="app-header">
-        <div className="logo">🏸 <span>Smash</span>Tour</div>
-        <div className="header-right">
-          <button className="nav-link" onClick={() => setView('bets')}>🎲 Bets</button>
-          <button className="nav-link" onClick={() => setView('payment')}>💰 Payment</button>
-          <button className="nav-link" onClick={() => setView('rankings')}>🏅 Rankings</button>
-          {view !== 'roster' && view !== 'setup' && (
-            <button className="nav-link" onClick={() => setView('history')}>📜 History</button>
-          )}
-          {(view === 'tournament' || view === 'champion') && (
-            <button className="nav-link" onClick={() => setView('roster')}>👥 Roster</button>
-          )}
-          <span className="badge-pill">{headerBadge}</span>
-        </div>
-      </header>
+      {/* ── Decorative background blobs ── */}
+      <div className="blob-decoration blob-1" aria-hidden="true" />
+      <div className="blob-decoration blob-2" aria-hidden="true" />
+      <div className="blob-decoration blob-3" aria-hidden="true" />
 
-      <div className="app-wrap">
-        {view === 'roster'     && <RosterScreen onDone={() => setView('setup')} />}
-        {view === 'setup'      && (
-          <SetupScreen
-            state={tourney} allPlayers={allPlayers}
-            onTogglePlayer={togglePlayer}
-            onSetGameType={t => setTourney(s => ({ ...s, gameType: t }))}
-            onSetFormat={f => setTourney(s => ({ ...s, tourneyFormat: f }))}
-            onStart={startTournament}
-            onBack={() => setView('roster')}
-          />
-        )}
-        {view === 'tournament' && (
-          <TournamentScreen
-            state={tourney}
-            allPlayers={allPlayers}
-            onScoreChange={handleScoreChange}
-            onMarkWinner={handleMarkWinner}
-            onReset={resetToSetup}
-            onCancel={cancelTournament}
-            onAddPlayer={addPlayerToTournament}
-            onReshuffle={handleReshuffle}
-            onAddManualMatch={handleAddManualMatch}
-            showRoundBanner={showRoundBanner}
-          />
-        )}
-        {view === 'champion' && tourney.champion && (
-          <ChampionScreen
-            champion={tourney.champion}
-            gameType={tourney.gameType}
-            onNew={resetToSetup}
-            onViewHistory={() => setView('history')}
-          />
-        )}
-        {view === 'history' && (
-          <HistoryScreen onBack={() => setView(tourney.rounds.length > 0 ? (tourney.champion ? 'champion' : 'tournament') : 'roster')} />
-        )}
-        {view === 'bets' && (
-          <BetHistoryScreen onBack={() => setView(tourney.rounds.length > 0 ? (tourney.champion ? 'champion' : 'tournament') : 'roster')} />
-        )}
-        {view === 'rankings' && (
-          <RankingsScreen onBack={() => setView(tourney.rounds.length > 0 ? (tourney.champion ? 'champion' : 'tournament') : 'roster')} />
-        )}
-        {view === 'payment' && (
-          <PaymentScreen
-            onBack={() => setView(tourney.rounds.length > 0 ? (tourney.champion ? 'champion' : 'tournament') : 'roster')}
-            tournamentPlayers={[...tourney.pros, ...tourney.beginners].map(p => p.name)}
-          />
-        )}
+      <div className="app-shell">
+        {/* ════════ SIDEBAR ════════ */}
+        <nav className="sidebar" role="navigation" aria-label="Main navigation">
+          {/* Logo */}
+          <a className="sidebar-logo" href="#" onClick={e => { e.preventDefault(); setView('rankings'); }}>
+            <span className="logo-icon">🏸</span>
+            <div>
+              <div className="logo-text">SmashTour</div>
+              <div className="logo-sub">Badminton Club</div>
+            </div>
+          </a>
+
+          <div className="sidebar-nav">
+            {/* Public pages */}
+            <p className="nav-section-label">Public</p>
+            {navPublic.map(item => (
+              <button
+                key={item.id}
+                id={`nav-${item.id}`}
+                className={`nav-link${activeView === item.id ? ' active' : ''}`}
+                onClick={() => setView(item.id as AppView)}
+              >
+                <span className="nav-icon">{item.icon}</span>
+                {item.label}
+              </button>
+            ))}
+
+            <div className="nav-divider" />
+
+            {/* Admin pages */}
+            <p className="nav-section-label">Admin</p>
+            {navAdmin.map(item => (
+              <button
+                key={item.id}
+                id={`nav-${item.id}`}
+                className={`nav-link${activeView === item.id ? ' active' : ''}`}
+                onClick={() => {
+                  if (!isAdmin && item.id !== 'tournament') {
+                    setShowLogin(true);
+                    return;
+                  }
+                  if (item.id === 'tournament') {
+                    setView(tourney.rounds.length > 0 ? (tourney.champion ? 'champion' : 'tournament') : 'roster');
+                  } else {
+                    setView(item.id as AppView);
+                  }
+                }}
+              >
+                <span className="nav-icon">{item.icon}</span>
+                {item.label}
+                {!isAdmin && <span className="lock-icon">🔒</span>}
+              </button>
+            ))}
+          </div>
+
+          {/* ── Admin status / login ── */}
+          <div className="sidebar-bottom">
+            {isAdmin ? (
+              <div>
+                <div className="admin-status">
+                  <div className="admin-avatar">AD</div>
+                  <div>
+                    <div className="admin-name">Admin</div>
+                    <div className="admin-role">Full access</div>
+                  </div>
+                </div>
+                <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+                  <button
+                    className="btn btn-ghost btn-sm"
+                    style={{ flex: 1 }}
+                    onClick={() => setShowChangePw(true)}
+                  >
+                    🔑 Password
+                  </button>
+                  <button
+                    className="btn btn-ghost btn-sm"
+                    style={{ flex: 1 }}
+                    onClick={handleLogout}
+                  >
+                    Exit
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <button
+                id="btn-admin-login"
+                className="btn btn-primary btn-full"
+                onClick={() => setShowLogin(true)}
+              >
+                🔐 Admin Login
+              </button>
+            )}
+          </div>
+        </nav>
+
+        {/* ════════ MAIN CONTENT ════════ */}
+        <main className="main-content" role="main">
+          {view === 'roster'     && <RosterScreen onDone={() => setView('setup')} />}
+          {view === 'setup'      && (
+            <SetupScreen
+              state={tourney} allPlayers={allPlayers}
+              onTogglePlayer={togglePlayer}
+              onSetGameType={t => setTourney(s => ({ ...s, gameType: t }))}
+              onSetFormat={f => setTourney(s => ({ ...s, tourneyFormat: f }))}
+              onStart={startTournament}
+              onBack={() => setView('roster')}
+            />
+          )}
+          {view === 'tournament' && (
+            <TournamentScreen
+              state={tourney}
+              allPlayers={allPlayers}
+              onScoreChange={handleScoreChange}
+              onMarkWinner={handleMarkWinner}
+              onReset={resetToSetup}
+              onCancel={cancelTournament}
+              onAddPlayer={addPlayerToTournament}
+              onReshuffle={handleReshuffle}
+              onAddManualMatch={handleAddManualMatch}
+              showRoundBanner={showRoundBanner}
+            />
+          )}
+          {view === 'champion' && tourney.champion && (
+            <ChampionScreen
+              champion={tourney.champion}
+              gameType={tourney.gameType}
+              onNew={resetToSetup}
+              onViewHistory={() => setView('history')}
+            />
+          )}
+          {view === 'history'  && (
+            <HistoryScreen onBack={() => setView(tourney.rounds.length > 0 ? (tourney.champion ? 'champion' : 'tournament') : 'roster')} />
+          )}
+          {view === 'bets'     && (
+            <BetHistoryScreen onBack={() => setView(tourney.rounds.length > 0 ? (tourney.champion ? 'champion' : 'tournament') : 'roster')} />
+          )}
+          {view === 'rankings' && (
+            <RankingsScreen onBack={() => setView(tourney.rounds.length > 0 ? (tourney.champion ? 'champion' : 'tournament') : 'roster')} />
+          )}
+          {view === 'payment'  && (
+            <PaymentScreen
+              onBack={() => setView(tourney.rounds.length > 0 ? (tourney.champion ? 'champion' : 'tournament') : 'roster')}
+              tournamentPlayers={[...tourney.pros, ...tourney.beginners].map(p => p.name)}
+            />
+          )}
+        </main>
       </div>
+
+      {/* ════════ LOGIN MODAL ════════ */}
+      {showLogin && (
+        <div
+          style={{
+            position: 'fixed', inset: 0, background: 'rgba(30,27,75,.45)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            zIndex: 1000, backdropFilter: 'blur(8px)',
+          }}
+          onClick={e => { if (e.target === e.currentTarget) setShowLogin(false); }}
+          role="dialog"
+          aria-modal="true"
+          aria-label="Admin login"
+        >
+          <div style={{
+            background: 'var(--bg-card)', borderRadius: 'var(--r)',
+            padding: '36px 32px', width: '100%', maxWidth: 420,
+            boxShadow: '0 24px 80px rgba(124,58,237,.25)',
+            border: '1px solid var(--border)', animation: 'fadeIn .25s ease',
+          }}>
+            <div style={{ textAlign: 'center', marginBottom: 28 }}>
+              <span style={{ fontSize: 40, display: 'block', marginBottom: 12 }}>🔐</span>
+              <h2 style={{ fontSize: 22, fontWeight: 800, color: 'var(--text)', marginBottom: 6 }}>Admin Login</h2>
+              <p style={{ fontSize: 13, color: 'var(--text2)' }}>Public pages are always accessible without login</p>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <input
+                id="login-username"
+                className="input"
+                placeholder="Username"
+                value={loginUser}
+                onChange={e => setLoginUser(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && handleLogin()}
+                autoFocus
+                autoComplete="username"
+              />
+              <input
+                id="login-password"
+                className="input"
+                type="password"
+                placeholder="Password"
+                value={loginPass}
+                onChange={e => setLoginPass(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && handleLogin()}
+                autoComplete="current-password"
+              />
+              {loginError && <div className="alert alert-danger">{loginError}</div>}
+              <button
+                id="btn-login-submit"
+                className="btn btn-primary btn-lg btn-full"
+                disabled={loginLoading}
+                onClick={handleLogin}
+              >
+                {loginLoading ? '⏳ Signing in…' : '🔐 Sign In'}
+              </button>
+              <button
+                className="btn btn-ghost btn-sm btn-full"
+                onClick={() => setShowLogin(false)}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ════════ CHANGE PASSWORD MODAL ════════ */}
+      {showChangePw && (
+        <div
+          style={{
+            position: 'fixed', inset: 0, background: 'rgba(30,27,75,.45)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            zIndex: 1000, backdropFilter: 'blur(8px)',
+          }}
+          role="dialog" aria-modal="true" aria-label="Change password"
+        >
+          <div style={{
+            background: 'var(--bg-card)', borderRadius: 'var(--r)',
+            padding: '32px 28px', width: '100%', maxWidth: 380,
+            boxShadow: '0 24px 80px rgba(124,58,237,.25)',
+            border: '1px solid var(--border)',
+          }}>
+            <h3 style={{ fontSize: 18, fontWeight: 800, marginBottom: 20, color: 'var(--text)' }}>🔑 Change Password</h3>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <input id="cp-current" className="input" type="password" placeholder="Current password" value={cpCurrent} onChange={e => setCpCurrent(e.target.value)} autoComplete="current-password" />
+              <input id="cp-new" className="input" type="password" placeholder="New password (min 8 chars)" value={cpNew} onChange={e => setCpNew(e.target.value)} autoComplete="new-password" />
+              <input id="cp-confirm" className="input" type="password" placeholder="Confirm new password" value={cpConfirm} onChange={e => setCpConfirm(e.target.value)} autoComplete="new-password" />
+              {cpError   && <div className="alert alert-danger">{cpError}</div>}
+              {cpSuccess && <div className="alert alert-success">{cpSuccess}</div>}
+              <button className="btn btn-primary btn-full" onClick={handleChangePw}>💾 Update Password</button>
+              <button className="btn btn-ghost btn-full" onClick={() => { setShowChangePw(false); setCpCurrent(''); setCpNew(''); setCpConfirm(''); setCpError(''); setCpSuccess(''); }}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }
