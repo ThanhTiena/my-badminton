@@ -104,7 +104,7 @@ function Confetti({ active }: { active: boolean }) {
 /* ════════════════════════════════════════════════════
    ROSTER SCREEN
 ════════════════════════════════════════════════════ */
-function RosterScreen({ onDone }: { onDone: () => void }) {
+function RosterScreen({ onDone, onOpenProfile }: { onDone: () => void; onOpenProfile?: (name: string) => void }) {
   const [players, setPlayers] = useState<PlayerDoc[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -236,7 +236,7 @@ function RosterScreen({ onDone }: { onDone: () => void }) {
                   const isEditing = editingId === id;
                   return (
                     <div key={id} className="player-card anim-slide">
-                      <div className="pc-body">
+                      <div className="pc-body" style={{ cursor: onOpenProfile ? 'pointer' : 'default' }} onClick={() => onOpenProfile?.(p.name)}>
                         <div className={`pc-avatar ${p.group}`}>
                           {p.name.trim().charAt(0)}
                         </div>
@@ -1229,6 +1229,7 @@ function HistoryScreen({ onBack }: { onBack: () => void }) {
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [histTabs, setHistTabs] = useState<Record<string, 'bracket' | 'list'>>({});
 
   useEffect(() => {
     fetch('/api/history?limit=50')
@@ -1295,20 +1296,102 @@ function HistoryScreen({ onBack }: { onBack: () => void }) {
                       )}
                     </div>
 
-                    <p className="t-hist-section-label">Match Results</p>
-                    <div className="t-match-list">
-                      {t.matches.map((m, i) => (
-                        <div key={i} className="t-match-row">
-                          <span className="t-match-round">{m.round}</span>
-                          <span className="t-match-teams">
-                            <span style={{ color: m.winner === m.teamA ? 'var(--success)' : 'var(--text3)', fontWeight: m.winner === m.teamA ? 700 : undefined }}>{m.teamA}</span>
-                            <span style={{ color: 'var(--text3)' }}> vs </span>
-                            <span style={{ color: m.winner === m.teamB ? 'var(--success)' : 'var(--text3)', fontWeight: m.winner === m.teamB ? 700 : undefined }}>{m.teamB}</span>
-                          </span>
-                          <span className="t-match-score">{m.scoreA}–{m.scoreB}</span>
-                        </div>
-                      ))}
+                    <div style={{ display: 'flex', gap: 6, marginBottom: 12, borderBottom: '1px solid var(--border)', paddingBottom: 8 }}>
+                      <button
+                        className={`btn btn-sm ${(!histTabs[id] || histTabs[id] === 'bracket') ? 'btn-primary' : 'btn-ghost'}`}
+                        style={{ minHeight: 32, padding: '2px 10px', fontSize: 11 }}
+                        onClick={() => setHistTabs(p => ({ ...p, [id]: 'bracket' }))}
+                      >
+                        {t.format === 'roundrobin' ? '📊 Rounds View' : '📊 Bracket View'}
+                      </button>
+                      <button
+                        className={`btn btn-sm ${(histTabs[id] === 'list') ? 'btn-primary' : 'btn-ghost'}`}
+                        style={{ minHeight: 32, padding: '2px 10px', fontSize: 11 }}
+                        onClick={() => setHistTabs(p => ({ ...p, [id]: 'list' }))}
+                      >
+                        📝 Match List
+                      </button>
                     </div>
+
+                    {(!histTabs[id] || histTabs[id] === 'bracket') ? (
+                      <div className="bracket-wrap" style={{ border: '1px solid var(--border)', borderRadius: 12, padding: '16px 14px', background: 'var(--bg-soft)', marginBottom: 16 }}>
+                        <div className="bracket-rounds">
+                          {(() => {
+                            const roundMap = new Map<string, any[]>();
+                            for (const m of t.matches) {
+                              if (!roundMap.has(m.round)) roundMap.set(m.round, []);
+                              roundMap.get(m.round)!.push(m);
+                            }
+                            const roundOrder = ['round 1', 'round 2', 'round 3', 'quarter-finals', 'semi-finals', 'finals'];
+                            const reconstructed = Array.from(roundMap.entries()).map(([name, rMatches]) => {
+                              return {
+                                name,
+                                matches: rMatches.map((m, idx) => {
+                                  const isBye = !m.teamB || m.teamB === '';
+                                  return {
+                                    id: `h-match-${name}-${idx}`,
+                                    teamA: { name: m.teamA },
+                                    teamB: isBye ? null : { name: m.teamB },
+                                    scoreA: m.scoreA,
+                                    scoreB: m.scoreB,
+                                    completed: true,
+                                    bye: isBye,
+                                    winner: m.winner ? { name: m.winner } : null
+                                  };
+                                })
+                              };
+                            });
+                            reconstructed.sort((a, b) => {
+                              const idxA = roundOrder.indexOf(a.name.toLowerCase());
+                              const idxB = roundOrder.indexOf(b.name.toLowerCase());
+                              if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+                              if (idxA !== -1) return -1;
+                              if (idxB !== -1) return 1;
+                              return a.name.localeCompare(b.name);
+                            });
+                            return reconstructed;
+                          })().map((round, ri) => (
+                            <div key={ri} className="bracket-round">
+                              <div className="bracket-round-title" style={{ fontSize: 11, fontWeight: 700, color: 'var(--primary)', marginBottom: 8, textAlign: 'center' }}>
+                                {round.name}
+                              </div>
+                              <div className="bracket-slots">
+                                {round.matches.map(m => {
+                                  const aWon = m.winner?.name === m.teamA?.name;
+                                  const bWon = m.winner?.name === m.teamB?.name;
+                                  return (
+                                    <div key={m.id} className="bracket-match-group">
+                                      <div className={`bracket-slot${aWon ? ' winner' : ''}`} style={{ fontSize: 11, padding: '4px 8px' }}>
+                                        <TruncName name={m.teamA?.name ?? '?'} />
+                                      </div>
+                                      {!m.bye && (
+                                        <div className={`bracket-slot${bWon ? ' winner' : ''}`} style={{ fontSize: 11, padding: '4px 8px' }}>
+                                          <TruncName name={m.teamB?.name ?? '?'} />
+                                        </div>
+                                      )}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="t-match-list">
+                        {t.matches.map((m, i) => (
+                          <div key={i} className="t-match-row">
+                            <span className="t-match-round">{m.round}</span>
+                            <span className="t-match-teams">
+                              <span style={{ color: m.winner === m.teamA ? 'var(--success)' : 'var(--text3)', fontWeight: m.winner === m.teamA ? 700 : undefined }}>{m.teamA}</span>
+                              <span style={{ color: 'var(--text3)' }}> vs </span>
+                              <span style={{ color: m.winner === m.teamB ? 'var(--success)' : 'var(--text3)', fontWeight: m.winner === m.teamB ? 700 : undefined }}>{m.teamB}</span>
+                            </span>
+                            <span className="t-match-score">{m.scoreA}–{m.scoreB}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -1323,7 +1406,7 @@ function HistoryScreen({ onBack }: { onBack: () => void }) {
 /* ════════════════════════════════════════════════════
    RANKINGS SCREEN
 ════════════════════════════════════════════════════ */
-function RankingsScreen({ onBack }: { onBack: () => void }) {
+function RankingsScreen({ onBack, onOpenProfile }: { onBack: () => void; onOpenProfile?: (name: string) => void }) {
   const [players, setPlayers] = useState<PlayerDoc[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<'all' | 'pro' | 'beg'>('all');
@@ -1441,7 +1524,7 @@ function RankingsScreen({ onBack }: { onBack: () => void }) {
                           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                             <Badge group={p.group} />
                             <div>
-                              <strong style={{ fontSize: 14 }}>{p.name}</strong>
+                              <strong style={{ fontSize: 14, cursor: onOpenProfile ? 'pointer' : 'default', textDecoration: onOpenProfile ? 'underline' : 'none' }} onClick={() => onOpenProfile?.(p.name)}>{p.name}</strong>
                               <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 1 }}>
                                 {winRate}% win rate · {s.tournamentsPlayed} tournament{s.tournamentsPlayed !== 1 ? 's' : ''}
                               </div>
@@ -1501,7 +1584,7 @@ function currentWeekRef() {
   return `${year}-W${String(week).padStart(2, '0')}`;
 }
 
-function PaymentScreen({ onBack, tournamentPlayers = [] }: { onBack: () => void; tournamentPlayers?: string[] }) {
+function PaymentScreen({ onBack, tournamentPlayers = [], onOpenProfile }: { onBack: () => void; tournamentPlayers?: string[]; onOpenProfile?: (name: string) => void }) {
   const [tab, setTab] = useState<PaymentTab>('add');
 
   /* ── Admin auth state ── */
