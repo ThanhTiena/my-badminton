@@ -120,14 +120,40 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       const normalizedQuery = playerName.trim().toLowerCase();
       // Match case-insensitively
       const matchedKey = Array.from(playerDebts.keys()).find(k => k.toLowerCase() === normalizedQuery);
+      
+      const matchedName = matchedKey || playerName.trim();
+      const sessions = await db
+        .collection(COLLECTIONS.COURT_SESSIONS)
+        .find(
+          { 'players.name': matchedName },
+          { collation: { locale: 'vi', strength: 2 } }
+        )
+        .sort({ sessionDate: -1 })
+        .toArray();
+
+      const formattedSessions = sessions.map(s => {
+        const pInfo = s.players.find((p: any) => p.name.toLowerCase() === matchedName.toLowerCase());
+        return {
+          sessionDate: s.sessionDate,
+          amountOwed: pInfo?.amountOwed ?? 0,
+          amountOwedRounded: pInfo?.amountOwedRounded ?? 0,
+          note: s.note,
+        };
+      });
+
       if (!matchedKey) {
         return res.status(200).json({
-          playerName: playerName.trim(),
+          playerName: matchedName,
           totalOutstanding: 0,
           breakdown: [],
+          sessions: formattedSessions,
         });
       }
-      return res.status(200).json(playerDebts.get(matchedKey));
+
+      return res.status(200).json({
+        ...playerDebts.get(matchedKey),
+        sessions: formattedSessions,
+      });
     }
 
     // Case 2: bulk list of all outstanding debts for admin

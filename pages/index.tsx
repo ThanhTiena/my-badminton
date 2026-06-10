@@ -1361,12 +1361,14 @@ function HistoryScreen({ onBack }: { onBack: () => void }) {
                                   const bWon = m.winner?.name === m.teamB?.name;
                                   return (
                                     <div key={m.id} className="bracket-match-group">
-                                      <div className={`bracket-slot${aWon ? ' winner' : ''}`} style={{ fontSize: 11, padding: '4px 8px' }}>
+                                      <div className={`bracket-slot${aWon ? ' winner' : ''}`} style={{ fontSize: 11, padding: '4px 8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 6 }}>
                                         <TruncName name={m.teamA?.name ?? '?'} />
+                                        {!m.bye && <span style={{ fontWeight: 700, opacity: aWon ? 1 : 0.6 }}>{m.scoreA}</span>}
                                       </div>
                                       {!m.bye && (
-                                        <div className={`bracket-slot${bWon ? ' winner' : ''}`} style={{ fontSize: 11, padding: '4px 8px' }}>
+                                        <div className={`bracket-slot${bWon ? ' winner' : ''}`} style={{ fontSize: 11, padding: '4px 8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 6 }}>
                                           <TruncName name={m.teamB?.name ?? '?'} />
+                                          <span style={{ fontWeight: 700, opacity: bWon ? 1 : 0.6 }}>{m.scoreB}</span>
                                         </div>
                                       )}
                                     </div>
@@ -1673,6 +1675,45 @@ function PaymentScreen({ onBack, tournamentPlayers = [], onOpenProfile }: { onBa
     courtFee: number; shuttlePool: number;
     courtWeightSum: number; shuttleWeightSum: number;
   } | null>(null);
+
+  const [outstandingDebts, setOutstandingDebts] = useState<any[]>([]);
+  const [debtLoading, setDebtLoading] = useState(true);
+
+  const fetchDebts = useCallback(async () => {
+    try {
+      const r = await fetch(`/api/payment/outstanding-debt?rounded=${showRounded}`);
+      if (r.ok) {
+        setOutstandingDebts(await r.json());
+      }
+      setDebtLoading(false);
+    } catch {
+      setDebtLoading(false);
+    }
+  }, [showRounded]);
+
+  useEffect(() => {
+    fetchDebts();
+  }, [fetchDebts]);
+
+  function handleExportCSV() {
+    if (!summary || !summary.players) return;
+    const headers = ['Player Name', 'Sessions Attended', 'Amount Owed (VND)', 'Paid Status'];
+    const rows = summary.players.map(p => [
+      p.name,
+      p.sessionCount,
+      showRounded ? p.totalOwedRounded : p.totalOwed,
+      paidMap[p.name]?.paid ? 'Paid' : 'Unpaid'
+    ]);
+    const csvContent = "\uFEFF" + [headers.join(','), ...rows.map(e => e.map(val => `"${val}"`).join(','))].join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", `badminton-payment-${summary.period.replace(/\s+/g, '-')}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  }
 
   /* ── Edit session modal state ── */
   const [editingSession,    setEditingSession]    = useState<CourtSessionDoc | null>(null);
@@ -2115,6 +2156,7 @@ function PaymentScreen({ onBack, tournamentPlayers = [], onOpenProfile }: { onBa
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ period, playerName, paid, paidAmount, snapshotTotal }),
     });
+    fetchDebts();
   }
 
   async function savePaidAmount(playerName: string, paidAmount: number, currentGrandTotal: number) {
@@ -2129,6 +2171,7 @@ function PaymentScreen({ onBack, tournamentPlayers = [], onOpenProfile }: { onBa
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ period, playerName, paid, paidAmount, snapshotTotal }),
     });
+    fetchDebts();
   }
 
   async function deleteSession(id: string) {
@@ -2659,52 +2702,79 @@ function PaymentScreen({ onBack, tournamentPlayers = [], onOpenProfile }: { onBa
       {/* ═══════════════ SUMMARY TAB ═══════════════ */}
       {tab === 'summary' && (
         <div>
-          {/* Filter bar */}
-          <Card style={{ marginBottom: 16 }}>
-            {/* Row 1: period picker */}
-            <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 12, marginBottom: 12 }}>
-              <div className="pills" style={{ margin: 0 }}>
-                <button className={`pill${summaryMode === 'monthly' ? ' active' : ''}`} onClick={() => handleModeChange('monthly')}>📅 Monthly</button>
-                <button className={`pill${summaryMode === 'weekly'  ? ' active' : ''}`} onClick={() => handleModeChange('weekly')}>📆 Weekly</button>
-                <button className={`pill${summaryMode === 'range'   ? ' active' : ''}`} onClick={() => handleModeChange('range')}>📆 Range</button>
+          {/* Filter Bar & Outstanding Debt Leaderboard */}
+          <div className="two-col" style={{ marginBottom: 16 }}>
+            {/* Filter bar */}
+            <Card style={{ height: 'fit-content' }}>
+              {/* Row 1: period picker */}
+              <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 12, marginBottom: 12 }}>
+                <div className="pills" style={{ margin: 0 }}>
+                  <button className={`pill${summaryMode === 'monthly' ? ' active' : ''}`} onClick={() => handleModeChange('monthly')}>📅 Monthly</button>
+                  <button className={`pill${summaryMode === 'weekly'  ? ' active' : ''}`} onClick={() => handleModeChange('weekly')}>📆 Weekly</button>
+                  <button className={`pill${summaryMode === 'range'   ? ' active' : ''}`} onClick={() => handleModeChange('range')}>📆 Range</button>
+                </div>
+
+                {summaryMode === 'monthly' && (
+                  <input type="month" className="input" style={{ width: 160 }} value={summaryRef} onChange={({ target }: { target: HTMLInputElement }) => setSummaryRef(target.value)} />
+                )}
+                {summaryMode === 'weekly' && (
+                  <input type="week" className="input" style={{ width: 180 }} value={summaryRef} onChange={({ target }: { target: HTMLInputElement }) => setSummaryRef(target.value)} />
+                )}
+                {summaryMode === 'range' && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <input type="date" className="input" style={{ width: 150 }} value={rangeFrom} max={rangeTo}
+                      onChange={({ target }: { target: HTMLInputElement }) => setRangeFrom(target.value)} />
+                    <span style={{ fontSize: 13, color: 'var(--text3)' }}>–</span>
+                    <input type="date" className="input" style={{ width: 150 }} value={rangeTo} min={rangeFrom}
+                      onChange={({ target }: { target: HTMLInputElement }) => setRangeTo(target.value)} />
+                  </div>
+                )}
               </div>
 
-              {summaryMode === 'monthly' && (
-                <input type="month" className="input" style={{ width: 160 }} value={summaryRef} onChange={({ target }: { target: HTMLInputElement }) => setSummaryRef(target.value)} />
-              )}
-              {summaryMode === 'weekly' && (
-                <input type="week" className="input" style={{ width: 180 }} value={summaryRef} onChange={({ target }: { target: HTMLInputElement }) => setSummaryRef(target.value)} />
-              )}
-              {summaryMode === 'range' && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <input type="date" className="input" style={{ width: 150 }} value={rangeFrom} max={rangeTo}
-                    onChange={({ target }: { target: HTMLInputElement }) => setRangeFrom(target.value)} />
-                  <span style={{ fontSize: 13, color: 'var(--text3)' }}>–</span>
-                  <input type="date" className="input" style={{ width: 150 }} value={rangeTo} min={rangeFrom}
-                    onChange={({ target }: { target: HTMLInputElement }) => setRangeTo(target.value)} />
+              {/* Row 2: display options */}
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16, alignItems: 'center', paddingTop: 10, borderTop: '1px solid var(--border)' }}>
+                <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: .5 }}>Show:</span>
+                {([
+                  ['showDayTotal',   showDayTotal,   setShowDayTotal,   'Day total'],
+                  ['showWeekSub',    showWeekSub,    setShowWeekSub,    'Week sub'],
+                  ['showGrandTotal', showGrandTotal, setShowGrandTotal, 'Grand total'],
+                ] as [string, boolean, (v: boolean) => void, string][]).map(([key, val, setter, label]) => (
+                  <label key={key} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, cursor: 'pointer', userSelect: 'none' }}>
+                    <input type="checkbox" checked={val} onChange={({ target }: { target: HTMLInputElement }) => setter(target.checked)} style={{ width: 14, height: 14, accentColor: 'var(--accent2)' }} />
+                    {label}
+                  </label>
+                ))}
+                <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, cursor: 'pointer', marginLeft: 'auto', userSelect: 'none' }}>
+                  <input type="checkbox" checked={showRounded} onChange={({ target }: { target: HTMLInputElement }) => setShowRounded(target.checked)} style={{ width: 14, height: 14, accentColor: 'var(--accent)' }} />
+                  Round 1k
+                </label>
+              </div>
+            </Card>
+
+            {/* Outstanding Debt Summary */}
+            <Card style={{ height: 'fit-content' }}>
+              <CardTitle>🔴 Outstanding Debt</CardTitle>
+              {debtLoading ? (
+                <div style={{ fontSize: 13, color: 'var(--text3)' }}>Loading debts…</div>
+              ) : outstandingDebts.length === 0 ? (
+                <div style={{ fontSize: 13, color: 'var(--success)', fontWeight: 600 }}>🎉 All debts settled!</div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 115, overflowY: 'auto' }}>
+                  {outstandingDebts.map(d => (
+                    <div key={d.playerName} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: 13, borderBottom: '1px solid var(--bg-soft)', paddingBottom: 4 }}>
+                      <span style={{ fontWeight: 600, color: 'var(--text)', cursor: onOpenProfile ? 'pointer' : 'default', textDecoration: onOpenProfile ? 'underline' : 'none' }}
+                        onClick={() => onOpenProfile?.(d.playerName)}>
+                        {d.playerName}
+                      </span>
+                      <span style={{ fontWeight: 700, color: 'var(--danger)' }}>
+                        {formatVND(d.totalOutstanding)}
+                      </span>
+                    </div>
+                  ))}
                 </div>
               )}
-            </div>
-
-            {/* Row 2: display options */}
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16, alignItems: 'center', paddingTop: 10, borderTop: '1px solid var(--border)' }}>
-              <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: .5 }}>Show columns:</span>
-              {([
-                ['showDayTotal',   showDayTotal,   setShowDayTotal,   'Day total'],
-                ['showWeekSub',    showWeekSub,    setShowWeekSub,    'Week subtotal'],
-                ['showGrandTotal', showGrandTotal, setShowGrandTotal, 'Grand total'],
-              ] as [string, boolean, (v: boolean) => void, string][]).map(([key, val, setter, label]) => (
-                <label key={key} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, cursor: 'pointer', userSelect: 'none' }}>
-                  <input type="checkbox" checked={val} onChange={({ target }: { target: HTMLInputElement }) => setter(target.checked)} style={{ width: 15, height: 15, accentColor: 'var(--accent2)' }} />
-                  {label}
-                </label>
-              ))}
-              <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, cursor: 'pointer', marginLeft: 'auto', userSelect: 'none' }}>
-                <input type="checkbox" checked={showRounded} onChange={({ target }: { target: HTMLInputElement }) => setShowRounded(target.checked)} style={{ width: 15, height: 15, accentColor: 'var(--accent)' }} />
-                Round to 1 000 ₫
-              </label>
-            </div>
-          </Card>
+            </Card>
+          </div>
 
           {summLoading ? (
             <EmptyState icon="⏳" text="Loading…" />
@@ -2810,11 +2880,20 @@ function PaymentScreen({ onBack, tournamentPlayers = [], onOpenProfile }: { onBa
               <>
                 {/* Period header */}
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, flexWrap: 'wrap', gap: 8 }}>
-                  <div>
-                    <p style={{ fontWeight: 800, fontSize: 20 }}>{summary.period}</p>
-                    <p style={{ fontSize: 13, color: 'var(--text2)', marginTop: 2 }}>
-                      {summary.sessions.length} session{summary.sessions.length !== 1 ? 's' : ''} · {allNames.length} players
-                    </p>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+                    <div>
+                      <p style={{ fontWeight: 800, fontSize: 20 }}>{summary.period}</p>
+                      <p style={{ fontSize: 13, color: 'var(--text2)', marginTop: 2 }}>
+                        {summary.sessions.length} session{summary.sessions.length !== 1 ? 's' : ''} · {allNames.length} players
+                      </p>
+                    </div>
+                    <button
+                      className="btn btn-secondary btn-sm"
+                      onClick={handleExportCSV}
+                      style={{ minHeight: 34, padding: '4px 12px', borderRadius: 8, fontSize: 12 }}
+                    >
+                      📥 Export CSV
+                    </button>
                   </div>
                   <div style={{ textAlign: 'right', display: 'flex', gap: 20, alignItems: 'flex-end' }}>
                     {summaryMode === 'monthly' && totalRemaining < grandTotal && (
@@ -2899,7 +2978,7 @@ function PaymentScreen({ onBack, tournamentPlayers = [], onOpenProfile }: { onBa
                       {/* ── Player rows ── */}
                       {allNames.map(name => (
                         <tr key={name}>
-                          <td style={stickyNameStyle}>{name}</td>
+                          <td style={{ ...stickyNameStyle, cursor: onOpenProfile ? 'pointer' : 'default', textDecoration: onOpenProfile ? 'underline' : 'none' }} onClick={() => onOpenProfile?.(name)}>{name}</td>
 
                           {/* Day cells — hover shows popover */}
                           {weeks.map(([, wSessions]) =>
@@ -3737,11 +3816,18 @@ function PaymentScreen({ onBack, tournamentPlayers = [], onOpenProfile }: { onBa
 function BetHistoryScreen({ onBack }: { onBack: () => void }) {
   const [bets, setBets] = useState<BetDoc[]>([]);
   const [loading, setLoading] = useState(true);
+  const [leaderboard, setLeaderboard] = useState<any[]>([]);
+  const [leaderboardLoading, setLeaderboardLoading] = useState(true);
 
   useEffect(() => {
     fetch('/api/bets')
       .then(r => r.json())
       .then((data: BetDoc[]) => { setBets(data); setLoading(false); });
+
+    fetch('/api/bets/leaderboard')
+      .then(r => r.json())
+      .then(data => { setLeaderboard(data); setLeaderboardLoading(false); })
+      .catch(() => setLeaderboardLoading(false));
   }, []);
 
   const open   = bets.filter((b: BetDoc) => !b.outcome);
@@ -3775,6 +3861,35 @@ function BetHistoryScreen({ onBack }: { onBack: () => void }) {
                   <span className="summary-value" style={color ? { color: color as string } : {}}>{String(val)}</span>
                 </div>
               ))}
+            </Card>
+
+            <Card>
+              <CardTitle>📈 Bettor Leaderboard</CardTitle>
+              {leaderboardLoading ? (
+                <div style={{ fontSize: 13, color: 'var(--text3)', textAlign: 'center', padding: '16px 0' }}>⏳ Loading leaderboard…</div>
+              ) : leaderboard.length === 0 ? (
+                <div style={{ fontSize: 13, color: 'var(--text3)', textAlign: 'center', padding: '16px 0' }}>No settled bets yet.</div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10, maxHeight: 180, overflowY: 'auto' }}>
+                  {leaderboard.map((item, idx) => (
+                    <div key={item.bettor} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 13 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <span style={{ fontWeight: 700, color: idx === 0 ? '#f59e0b' : idx === 1 ? 'var(--text2)' : 'var(--text3)' }}>
+                          #{idx + 1}
+                        </span>
+                        <span style={{ fontWeight: 600 }}>{item.bettor}</span>
+                      </div>
+                      <div style={{ color: 'var(--text2)', fontSize: 12 }}>
+                        <span style={{ color: 'var(--success)', fontWeight: 600 }}>{item.wins}W</span>
+                        {' - '}
+                        <span style={{ color: 'var(--danger)' }}>{item.losses}L</span>
+                        {' · '}
+                        <span style={{ fontWeight: 600, color: 'var(--accent)' }}>{item.winRate}%</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </Card>
           </div>
 
@@ -3827,6 +3942,7 @@ function BetHistoryScreen({ onBack }: { onBack: () => void }) {
 export default function TournamentApp() {
   const [view,            setView]            = useState<AppView>('roster');
   const [allPlayers,      setAllPlayers]      = useState<PlayerDoc[]>([]);
+  const [profilePlayer,   setProfilePlayer]   = useState<string | null>(null);
   const [tourney,         setTourney]         = useState<TournamentState>(INITIAL_TOURNEY);
   const [showRoundBanner, setShowRoundBanner] = useState(false);
   const [confettiActive,  setConfettiActive]  = useState(false);
@@ -4338,7 +4454,7 @@ export default function TournamentApp() {
 
         {/* ════════ MAIN CONTENT ════════ */}
         <main className="main-content" role="main">
-          {view === 'roster'     && <RosterScreen onDone={() => setView('setup')} />}
+          {view === 'roster'     && <RosterScreen onDone={() => setView('setup')} onOpenProfile={setProfilePlayer} />}
           {view === 'setup'      && (
             <SetupScreen
               state={tourney} allPlayers={allPlayers}
@@ -4378,12 +4494,16 @@ export default function TournamentApp() {
             <BetHistoryScreen onBack={() => setView(tourney.rounds.length > 0 ? (tourney.champion ? 'champion' : 'tournament') : 'roster')} />
           )}
           {view === 'rankings' && (
-            <RankingsScreen onBack={() => setView(tourney.rounds.length > 0 ? (tourney.champion ? 'champion' : 'tournament') : 'roster')} />
+            <RankingsScreen
+              onBack={() => setView(tourney.rounds.length > 0 ? (tourney.champion ? 'champion' : 'tournament') : 'roster')}
+              onOpenProfile={setProfilePlayer}
+            />
           )}
           {view === 'payment'  && (
             <PaymentScreen
               onBack={() => setView(tourney.rounds.length > 0 ? (tourney.champion ? 'champion' : 'tournament') : 'roster')}
               tournamentPlayers={[...tourney.pros, ...tourney.beginners].map(p => p.name)}
+              onOpenProfile={setProfilePlayer}
             />
           )}
         </main>
@@ -4483,6 +4603,338 @@ export default function TournamentApp() {
           </div>
         </div>
       )}
+
+      {profilePlayer && (
+        <PlayerProfileModal
+          playerName={profilePlayer}
+          onClose={() => setProfilePlayer(null)}
+          allPlayers={allPlayers}
+        />
+      )}
     </>
+  );
+}
+
+interface PlayerProfileData {
+  playerName: string;
+  totalOutstanding: number;
+  breakdown: { period: string; owed: number; paid: number; remaining: number }[];
+  sessions: { sessionDate: string; amountOwed: number; amountOwedRounded: number; note?: string }[];
+}
+
+function PlayerProfileModal({
+  playerName,
+  onClose,
+  allPlayers,
+}: {
+  playerName: string;
+  onClose: () => void;
+  allPlayers: PlayerDoc[];
+}) {
+  const [activeTab, setActiveTab] = useState<'stats' | 'debt' | 'sessions'>('stats');
+  const [debtData, setDebtData] = useState<PlayerProfileData | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let active = true;
+    async function load() {
+      try {
+        const r = await fetch(`/api/payment/outstanding-debt?playerName=${encodeURIComponent(playerName)}`);
+        if (r.ok && active) {
+          setDebtData(await r.json());
+        }
+      } catch (e) {
+        console.error(e);
+      } finally {
+        if (active) setLoading(false);
+      }
+    }
+    load();
+    return () => { active = false; };
+  }, [playerName]);
+
+  const player = allPlayers.find(p => p.name.toLowerCase() === playerName.toLowerCase());
+  const isPro = player?.group === 'pro';
+  const groupClass = isPro ? 'pro' : 'beg';
+
+  const stats = player?.stats || {
+    tournamentsPlayed: 0,
+    wins: 0,
+    losses: 0,
+    titles: 0,
+    runnerUps: 0,
+    pointsScored: 0,
+    pointsConceded: 0,
+  };
+  const totalMatches = stats.wins + stats.losses;
+  const winRate = totalMatches > 0 ? Math.round((stats.wins / totalMatches) * 100) : 0;
+  const ptDiff = stats.pointsScored - stats.pointsConceded;
+
+  return (
+    <div
+      style={{
+        position: 'fixed', inset: 0, background: 'rgba(30,27,75,.45)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        zIndex: 1100, backdropFilter: 'blur(8px)',
+      }}
+      onClick={e => { if (e.target === e.currentTarget) onClose(); }}
+      role="dialog"
+      aria-modal="true"
+      aria-label={`${playerName} Profile`}
+    >
+      <div style={{
+        background: 'var(--bg-card)', borderRadius: 'var(--r)',
+        width: '100%', maxWidth: 580, maxHeight: '85vh', display: 'flex', flexDirection: 'column',
+        boxShadow: '0 24px 80px rgba(124,58,237,.25)',
+        border: '1px solid var(--border)', animation: 'fadeIn .25s ease',
+        overflow: 'hidden',
+      }}>
+        {/* Header */}
+        <div style={{
+          padding: '28px 28px 20px',
+          background: 'linear-gradient(135deg, var(--bg-card) 0%, rgba(243, 244, 246, 0.4) 100%)',
+          borderBottom: '1px solid var(--border)',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'flex-start',
+        }}>
+          <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
+            <div className={`pc-avatar ${groupClass}`} style={{ width: 56, height: 56, fontSize: 22, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold' }}>
+              {playerName.charAt(0)}
+            </div>
+            <div>
+              <h2 style={{ fontSize: 22, fontWeight: 800, color: 'var(--text)', margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
+                {playerName}
+                {player?.active === false && (
+                  <span style={{ fontSize: 11, background: 'var(--border)', color: 'var(--text3)', padding: '2px 8px', borderRadius: 12 }}>
+                    Archived
+                  </span>
+                )}
+              </h2>
+              <div style={{ display: 'flex', gap: 8, marginTop: 6 }}>
+                <Badge group={player?.group ?? 'beg'} />
+                <span className="badge" style={{ background: 'var(--card)', color: 'var(--text2)', border: '1px solid var(--border)' }}>
+                  Score: {player?.rankScore ?? 0}
+                </span>
+              </div>
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            style={{
+              background: 'none', border: 'none', fontSize: 22, color: 'var(--text3)', cursor: 'pointer', padding: 4
+            }}
+          >
+            ✕
+          </button>
+        </div>
+
+        {/* Tabs */}
+        <div style={{
+          display: 'flex', borderBottom: '1px solid var(--border)', background: 'var(--bg-card)', padding: '0 16px'
+        }}>
+          <button
+            onClick={() => setActiveTab('stats')}
+            style={{
+              padding: '14px 16px', border: 'none', background: 'none', cursor: 'pointer',
+              fontWeight: 600, fontSize: 14,
+              color: activeTab === 'stats' ? 'var(--accent)' : 'var(--text3)',
+              borderBottom: activeTab === 'stats' ? '2px solid var(--accent)' : '2px solid transparent',
+              transition: 'all 0.2s',
+            }}
+          >
+            📊 Stats & Overview
+          </button>
+          <button
+            onClick={() => setActiveTab('debt')}
+            style={{
+              padding: '14px 16px', border: 'none', background: 'none', cursor: 'pointer',
+              fontWeight: 600, fontSize: 14,
+              color: activeTab === 'debt' ? 'var(--accent)' : 'var(--text3)',
+              borderBottom: activeTab === 'debt' ? '2px solid var(--accent)' : '2px solid transparent',
+              transition: 'all 0.2s',
+            }}
+          >
+            💰 Financials
+          </button>
+          <button
+            onClick={() => setActiveTab('sessions')}
+            style={{
+              padding: '14px 16px', border: 'none', background: 'none', cursor: 'pointer',
+              fontWeight: 600, fontSize: 14,
+              color: activeTab === 'sessions' ? 'var(--accent)' : 'var(--text3)',
+              borderBottom: activeTab === 'sessions' ? '2px solid var(--accent)' : '2px solid transparent',
+              transition: 'all 0.2s',
+            }}
+          >
+            🗓️ Session Logs
+          </button>
+        </div>
+
+        {/* Tab content */}
+        <div style={{ padding: 28, overflowY: 'auto', flex: 1, background: 'var(--bg-card)' }}>
+          {activeTab === 'stats' && (
+            <div className="anim-fade" style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 16 }}>
+                <div style={{
+                  background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-sm)',
+                  padding: 16, display: 'flex', flexDirection: 'column', gap: 4
+                }}>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: 0.5 }}>🏆 Club Rank Score</span>
+                  <span style={{ fontSize: 28, fontWeight: 900, color: 'var(--accent)' }}>{player?.rankScore ?? 0}</span>
+                  <span style={{ fontSize: 11, color: 'var(--text3)' }}>Calculated dynamically from tournament success</span>
+                </div>
+                <div style={{
+                  background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-sm)',
+                  padding: 16, display: 'flex', flexDirection: 'column', gap: 4
+                }}>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: 0.5 }}>⚡ Win Rate</span>
+                  <span style={{ fontSize: 28, fontWeight: 900, color: 'var(--success)' }}>{winRate}%</span>
+                  <span style={{ fontSize: 11, color: 'var(--text3)' }}>{stats.wins} wins · {stats.losses} losses · {totalMatches} matches</span>
+                </div>
+                <div style={{
+                  background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-sm)',
+                  padding: 16, display: 'flex', flexDirection: 'column', gap: 4
+                }}>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: 0.5 }}>🎖️ Tournament Honors</span>
+                  <span style={{ fontSize: 24, fontWeight: 800, color: '#f59e0b', display: 'flex', alignItems: 'center', gap: 6 }}>
+                    🏆 {stats.titles} <span style={{ color: 'var(--text3)', fontWeight: 400, fontSize: 16 }}>/</span> 🥈 {stats.runnerUps}
+                  </span>
+                  <span style={{ fontSize: 11, color: 'var(--text3)' }}>{stats.tournamentsPlayed} tournaments played</span>
+                </div>
+                <div style={{
+                  background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-sm)',
+                  padding: 16, display: 'flex', flexDirection: 'column', gap: 4
+                }}>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: 0.5 }}>📈 Point Differential</span>
+                  <span style={{ fontSize: 24, fontWeight: 800, color: ptDiff >= 0 ? 'var(--success)' : 'var(--danger)' }}>
+                    {ptDiff >= 0 ? `+${ptDiff}` : ptDiff}
+                  </span>
+                  <span style={{ fontSize: 11, color: 'var(--text3)' }}>{stats.pointsScored} scored vs {stats.pointsConceded} conceded</span>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'debt' && (
+            <div className="anim-fade">
+              {loading ? (
+                <div style={{ textAlign: 'center', padding: '40px 0', color: 'var(--text3)' }}>⏳ Loading financials...</div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+                  <div style={{
+                    background: (debtData?.totalOutstanding ?? 0) > 0 ? 'rgba(239, 68, 68, 0.06)' : 'rgba(16, 185, 129, 0.06)',
+                    border: '1px solid ' + ((debtData?.totalOutstanding ?? 0) > 0 ? 'rgba(239, 68, 68, 0.15)' : 'rgba(16, 185, 129, 0.15)'),
+                    borderRadius: 'var(--r)', padding: '20px 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center'
+                  }}>
+                    <div>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text2)', textTransform: 'uppercase', letterSpacing: 0.5 }}>Outstanding Balance</div>
+                      <div style={{ fontSize: 28, fontWeight: 900, color: (debtData?.totalOutstanding ?? 0) > 0 ? 'var(--danger)' : 'var(--success)', marginTop: 4 }}>
+                        {formatVND(debtData?.totalOutstanding ?? 0)}
+                      </div>
+                    </div>
+                    <span style={{ fontSize: 36 }}>{(debtData?.totalOutstanding ?? 0) > 0 ? '💸' : '🎉'}</span>
+                  </div>
+
+                  <div>
+                    <h3 style={{ fontSize: 14, fontWeight: 700, color: 'var(--text)', marginBottom: 12 }}>Monthly Breakdown</h3>
+                    {!debtData?.breakdown || debtData.breakdown.length === 0 ? (
+                      <div style={{
+                        textAlign: 'center', padding: 32, background: 'var(--card)', border: '1px solid var(--border)',
+                        borderRadius: 'var(--r-sm)', color: 'var(--text3)', fontSize: 13
+                      }}>
+                        No billing periods found for this player.
+                      </div>
+                    ) : (
+                      <table className="table" style={{ width: '100%' }}>
+                        <thead>
+                          <tr>
+                            <th>Period</th>
+                            <th className="num">Owed</th>
+                            <th className="num">Paid</th>
+                            <th className="num">Remaining</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {debtData.breakdown.map(b => (
+                            <tr key={b.period}>
+                              <td style={{ fontWeight: 600 }}>{b.period}</td>
+                              <td className="num">{formatVND(b.owed)}</td>
+                              <td className="num">{formatVND(b.paid)}</td>
+                              <td className="num" style={{
+                                fontWeight: 700,
+                                color: b.remaining > 0 ? 'var(--danger)' : 'var(--success)'
+                              }}>
+                                {formatVND(b.remaining)}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {activeTab === 'sessions' && (
+            <div className="anim-fade">
+              {loading ? (
+                <div style={{ textAlign: 'center', padding: '40px 0', color: 'var(--text3)' }}>⏳ Loading session logs...</div>
+              ) : (
+                <div>
+                  <h3 style={{ fontSize: 14, fontWeight: 700, color: 'var(--text)', marginBottom: 12 }}>Attended Sessions</h3>
+                  {!debtData?.sessions || debtData.sessions.length === 0 ? (
+                    <div style={{
+                      textAlign: 'center', padding: 32, background: 'var(--card)', border: '1px solid var(--border)',
+                      borderRadius: 'var(--r-sm)', color: 'var(--text3)', fontSize: 13
+                    }}>
+                      No sessions recorded.
+                    </div>
+                  ) : (
+                    <div style={{ maxHeight: 300, overflowY: 'auto', border: '1px solid var(--border)', borderRadius: 'var(--r-sm)' }}>
+                      <table className="table" style={{ width: '100%', margin: 0 }}>
+                        <thead style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--card)' }}>
+                          <tr>
+                            <th>Date</th>
+                            <th>Note</th>
+                            <th className="num">Cost Share</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {debtData.sessions.map((s, idx) => (
+                            <tr key={idx}>
+                              <td style={{ fontWeight: 600, fontSize: 13 }}>{s.sessionDate}</td>
+                              <td style={{ fontSize: 12, color: 'var(--text2)', maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={s.note}>
+                                {s.note || <span style={{ color: 'var(--text3)', fontStyle: 'italic' }}>—</span>}
+                              </td>
+                              <td className="num" style={{ fontWeight: 600, fontSize: 13 }}>{formatVND(s.amountOwedRounded || s.amountOwed)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div style={{
+          padding: '16px 28px',
+          borderTop: '1px solid var(--border)',
+          background: 'var(--card)',
+          display: 'flex',
+          justifyContent: 'flex-end',
+        }}>
+          <button className="btn btn-secondary" onClick={onClose}>
+            Close Profile
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
