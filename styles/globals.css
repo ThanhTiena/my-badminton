@@ -49,6 +49,14 @@
   --r:            16px;
   --r-sm:         10px;
   --r-xs:         6px;
+
+  /* Legacy variables compatibility for inline-styled React components */
+  --bg2:          #F0EEFF;
+  --bg3:          #FFFFFF;
+  --bg4:          #EAE8FF;
+  --card:         #FFFFFF;
+  --accent:       #7C3AED;
+  --accent3:      #FF6B35;
 }
 
 /* ── Base ── */
@@ -74,8 +82,7 @@ body {
 ::-webkit-scrollbar-thumb { background: #D1C9F5; border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: #A78BFA; }
 
-/* ── Google Fonts import ── */
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Outfit:wght@700;800;900&display=swap');
+
 
 /* ════════════════════════════════════════════════════
    KEYFRAMES

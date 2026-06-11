@@ -24,11 +24,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const { playerName, rounded } = req.query as { playerName?: string; rounded?: string };
   const useRounded = rounded === 'true';
 
-  // If no playerName requested, this is a bulk audit list — require admin
-  if (!playerName) {
-    const admin = await requireAdmin(req, res);
-    if (!admin) return; // response already sent
-  }
+  // Accessible to all visitors so they can review their outstanding balances
 
   try {
     const db = getDb();

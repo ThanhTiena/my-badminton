@@ -11,7 +11,7 @@ import {
 import type { PlayerDoc, TournamentHistoryDoc, CourtSessionDoc, PaymentConfigDoc, ImportRow, BetDoc } from '@/lib/models';
 import { parseImportText, formatVND } from '@/lib/payment';
 
-type AppView = 'roster' | 'setup' | 'tournament' | 'champion' | 'history' | 'rankings' | 'payment' | 'bets';
+type AppView = 'roster' | 'setup' | 'tournament' | 'champion' | 'history' | 'rankings' | 'payment' | 'bets' | 'analytics';
 
 const INITIAL_TOURNEY: TournamentState = {
   pros: [], beginners: [], teams: [],
@@ -1406,6 +1406,226 @@ function HistoryScreen({ onBack }: { onBack: () => void }) {
 }
 
 /* ════════════════════════════════════════════════════
+   ADMIN ANALYTICS SCREEN
+════════════════════════════════════════════════════ */
+interface AnalyticsData {
+  players: { total: number; pro: number; beg: number };
+  tournaments: { total: number; singles: number; doubles: number; matches: number };
+  financials: { totalCost: number; courtFee: number; shuttleTotal: number; sessionCount: number; totalPaid: number; totalOutstanding: number };
+  bets: { total: number; settled: number };
+}
+
+function AnalyticsScreen({ onBack }: { onBack: () => void }) {
+  const [data, setData] = useState<AnalyticsData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    fetch('/api/admin/analytics')
+      .then(async r => {
+        if (!r.ok) {
+          const errData = await r.json().catch(() => ({}));
+          throw new Error(errData.error ?? 'Failed to load analytics. Please ensure you are logged in as admin.');
+        }
+        return r.json();
+      })
+      .then((d: AnalyticsData) => {
+        setData(d);
+        setLoading(false);
+      })
+      .catch((err: any) => {
+        setError(err.message ?? 'Failed to load analytics.');
+        setLoading(false);
+      });
+  }, []);
+
+  if (loading) {
+    return (
+      <div className="anim-fade">
+        <button className="back-btn" onClick={onBack}>← Back</button>
+        <p className="page-title">📊 Admin Analytics</p>
+        <EmptyState icon="⏳" text="Calculating statistics and loading financial summaries..." />
+      </div>
+    );
+  }
+
+  if (error || !data) {
+    return (
+      <div className="anim-fade">
+        <button className="back-btn" onClick={onBack}>← Back</button>
+        <p className="page-title">📊 Admin Analytics</p>
+        <div className="alert alert-danger" style={{ marginTop: 20 }}>
+          <span>⚠️</span> {error || 'Unable to retrieve statistics.'}
+        </div>
+      </div>
+    );
+  }
+
+  // Calculate percentages
+  const collectedPct = data.financials.totalCost > 0 
+    ? Math.round((data.financials.totalPaid / data.financials.totalCost) * 100)
+    : 0;
+
+  const proPct = data.players.total > 0
+    ? Math.round((data.players.pro / data.players.total) * 100)
+    : 0;
+
+  const singlesPct = data.tournaments.total > 0
+    ? Math.round((data.tournaments.singles / data.tournaments.total) * 100)
+    : 0;
+
+  return (
+    <div className="anim-fade">
+      <button className="back-btn" onClick={onBack}>← Back</button>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+        <div>
+          <p className="page-title">📊 Admin Analytics</p>
+          <p className="page-sub">Club insights, player metrics, and financial records summary.</p>
+        </div>
+      </div>
+
+      {/* Financial Overview Cards */}
+      <p className="nav-section-label" style={{ paddingLeft: 0, marginTop: 12, marginBottom: 12 }}>💰 Financial Breakdown</p>
+      <div className="metric-grid">
+        <div className="metric-card mc-violet">
+          <div className="mc-stripe" />
+          <div className="mc-label">Total Spent</div>
+          <div className="mc-value">{formatVND(data.financials.totalCost)}</div>
+          <div className="mc-sub">{data.financials.sessionCount} court sessions played</div>
+          <div className="mc-icon">💳</div>
+        </div>
+
+        <div className="metric-card mc-green">
+          <div className="mc-stripe" />
+          <div className="mc-label">Collected Payments</div>
+          <div className="mc-value">{formatVND(data.financials.totalPaid)}</div>
+          <div className="mc-sub">{collectedPct}% collected</div>
+          <div className="mc-icon">💰</div>
+        </div>
+
+        <div className="metric-card mc-red">
+          <div className="mc-stripe" />
+          <div className="mc-label">Outstanding Debt</div>
+          <div className="mc-value">{formatVND(data.financials.totalOutstanding)}</div>
+          <div className="mc-sub">Remaining to be collected</div>
+          <div className="mc-icon">🛑</div>
+        </div>
+
+        <div className="metric-card mc-blue">
+          <div className="mc-stripe" />
+          <div className="mc-label">Shuttlecock Costs</div>
+          <div className="mc-value">{formatVND(data.financials.shuttleTotal)}</div>
+          <div className="mc-sub">{formatVND(data.financials.courtFee)} court rental fees</div>
+          <div className="mc-icon">🏸</div>
+        </div>
+      </div>
+
+      {/* Visual Progress Charts */}
+      <div className="two-col" style={{ marginBottom: 28 }}>
+        <Card className="card-gradient-top">
+          <CardTitle>📊 Collection Progress ({collectedPct}%)</CardTitle>
+          <p style={{ fontSize: 13, color: 'var(--text2)', marginBottom: 16 }}>
+            Comparison of total court booking costs versus payments collected from members.
+          </p>
+
+          <div style={{ height: 24, background: 'var(--bg-soft)', borderRadius: 12, overflow: 'hidden', display: 'flex', marginBottom: 16, border: '1px solid var(--border)' }}>
+            <div 
+              style={{ 
+                width: `${Math.min(100, collectedPct)}%`, 
+                background: 'var(--grad-success)', 
+                display: 'flex', 
+                alignItems: 'center', 
+                justifyContent: 'center', 
+                color: '#fff', 
+                fontSize: 11, 
+                fontWeight: 800,
+                transition: 'width 1s ease-in-out'
+              }}
+            >
+              {collectedPct}%
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
+            <div>
+              <span style={{ display: 'inline-block', width: 10, height: 10, borderRadius: '50%', background: 'var(--success)', marginRight: 6 }} />
+              <strong>Paid:</strong> {formatVND(data.financials.totalPaid)}
+            </div>
+            <div>
+              <span style={{ display: 'inline-block', width: 10, height: 10, borderRadius: '50%', background: 'var(--danger)', marginRight: 6 }} />
+              <strong>Remaining:</strong> {formatVND(data.financials.totalOutstanding)}
+            </div>
+          </div>
+        </Card>
+
+        <Card className="card-gradient-top">
+          <CardTitle>👥 Player Groups & Distributions</CardTitle>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, marginBottom: 6 }}>
+                <span><strong>Roster:</strong> {data.players.pro} Pros / {data.players.beg} Beginners</span>
+                <span>{proPct}% Pro</span>
+              </div>
+              <div style={{ height: 12, background: 'var(--bg-soft)', borderRadius: 6, overflow: 'hidden', display: 'flex', border: '1px solid var(--border)' }}>
+                <div style={{ width: `${proPct}%`, background: 'var(--grad-primary)' }} />
+                <div style={{ width: `${100 - proPct}%`, background: 'var(--grad-success)' }} />
+              </div>
+            </div>
+
+            <div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, marginBottom: 6 }}>
+                <span><strong>Tournaments:</strong> {data.tournaments.singles} Singles / {data.tournaments.doubles} Doubles</span>
+                <span>{singlesPct}% Singles</span>
+              </div>
+              <div style={{ height: 12, background: 'var(--bg-soft)', borderRadius: 6, overflow: 'hidden', display: 'flex', border: '1px solid var(--border)' }}>
+                <div style={{ width: `${singlesPct}%`, background: 'var(--grad-warm)' }} />
+                <div style={{ width: `${100 - singlesPct}%`, background: 'var(--grad-sky)' }} />
+              </div>
+            </div>
+          </div>
+        </Card>
+      </div>
+
+      {/* Activity Overview Cards */}
+      <p className="nav-section-label" style={{ paddingLeft: 0, marginBottom: 12 }}>📈 Activity Summary</p>
+      <div className="metric-grid">
+        <div className="metric-card mc-blue">
+          <div className="mc-stripe" />
+          <div className="mc-label">Tournaments Completed</div>
+          <div className="mc-value">{data.tournaments.total}</div>
+          <div className="mc-sub">Historical match records</div>
+          <div className="mc-icon">🏆</div>
+        </div>
+
+        <div className="metric-card mc-violet">
+          <div className="mc-stripe" />
+          <div className="mc-label">Matches Played</div>
+          <div className="mc-value">{data.tournaments.matches}</div>
+          <div className="mc-sub">Across all formats</div>
+          <div className="mc-icon">🏸</div>
+        </div>
+
+        <div className="metric-card mc-green">
+          <div className="mc-stripe" />
+          <div className="mc-label">Active Members</div>
+          <div className="mc-value">{data.players.total}</div>
+          <div className="mc-sub">Registered players on roster</div>
+          <div className="mc-icon">👥</div>
+        </div>
+
+        <div className="metric-card mc-red">
+          <div className="mc-stripe" />
+          <div className="mc-label">Total Bets Placed</div>
+          <div className="mc-value">{data.bets.total}</div>
+          <div className="mc-sub">{data.bets.settled} settled matches</div>
+          <div className="mc-icon">🎲</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ════════════════════════════════════════════════════
    RANKINGS SCREEN
 ════════════════════════════════════════════════════ */
 function RankingsScreen({ onBack, onOpenProfile }: { onBack: () => void; onOpenProfile?: (name: string) => void }) {
@@ -1475,31 +1695,29 @@ function RankingsScreen({ onBack, onOpenProfile }: { onBack: () => void; onOpenP
         <>
           {/* Podium */}
           {top3.length >= 2 && (
-            <Card style={{ marginBottom: 24 }}>
-              <div className="podium">
-                {podiumOrder.map((p, i) => {
-                  if (!p) return null;
-                  const rank = podiumRanks[i];
-                  const h    = podiumHeights[i];
-                  return (
-                    <div key={p.name} className="podium-slot">
-                      <span className="podium-medal">{rank === 1 ? '🥇' : rank === 2 ? '🥈' : '🥉'}</span>
-                      <div className={`podium-avatar rank-${rank}`}>{initials(p.name)}</div>
-                      <span className="podium-name">{p.name}</span>
-                      <span className={`podium-score rank-${rank}`}>{p.rankScore ?? 0}</span>
-                      <div className={`podium-block rank-${rank}`} style={{ height: h }}>#{rank}</div>
-                    </div>
-                  );
-                })}
-              </div>
-            </Card>
+            <div className="podium-wrap">
+              {podiumOrder.map((p, i) => {
+                if (!p) return null;
+                const rank = podiumRanks[i];
+                const rankClass = rank === 1 ? '1st' : rank === 2 ? '2nd' : '3rd';
+                return (
+                  <div key={p.name} className={`podium-card podium-${rankClass}`}>
+                    <span className="podium-crown">{rank === 1 ? '👑' : rank === 2 ? '🥈' : '🥉'}</span>
+                    <div className="podium-avatar">{initials(p.name)}</div>
+                    <div className="podium-rank">#{rank}</div>
+                    <div className="podium-name">{p.name}</div>
+                    <div className="podium-score">{p.rankScore ?? 0} pts</div>
+                  </div>
+                );
+              })}
+            </div>
           )}
 
           {/* Full table */}
           <Card>
             <CardTitle>📊 Full Leaderboard ({filtered.length})</CardTitle>
             <div style={{ overflowX: 'auto' }}>
-              <table className="rank-table">
+              <table className="standings-table">
                 <thead>
                   <tr>
                     <th style={{ width: 40 }}>#</th>
@@ -1587,7 +1805,7 @@ function currentWeekRef() {
 }
 
 function PaymentScreen({ onBack, tournamentPlayers = [], onOpenProfile }: { onBack: () => void; tournamentPlayers?: string[]; onOpenProfile?: (name: string) => void }) {
-  const [tab, setTab] = useState<PaymentTab>('add');
+  const [tab, setTab] = useState<PaymentTab>('summary');
 
   /* ── Admin auth state ── */
   const [isAdmin,       setIsAdmin]       = useState(false);
@@ -2227,11 +2445,13 @@ function PaymentScreen({ onBack, tournamentPlayers = [], onOpenProfile }: { onBa
     else if (mode === 'weekly') setSummaryRef(currentWeekRef());
   }
 
-  const TABS: [PaymentTab, string][] = [
-    ['add', '➕ Add Session'],
+  const TABS: [PaymentTab, string][] = isAdmin ? [
     ['summary', '💰 Summary'],
+    ['add', '➕ Add Session'],
     ['import', '📥 Import'],
     ['weights', '⚖️ Weights'],
+  ] : [
+    ['summary', '💰 Summary'],
   ];
 
   return (
@@ -3941,6 +4161,7 @@ function BetHistoryScreen({ onBack }: { onBack: () => void }) {
 ════════════════════════════════════════════════════ */
 export default function TournamentApp() {
   const [view,            setView]            = useState<AppView>('roster');
+  const [mobileMenuOpen,  setMobileMenuOpen]  = useState(false);
   const [allPlayers,      setAllPlayers]      = useState<PlayerDoc[]>([]);
   const [profilePlayer,   setProfilePlayer]   = useState<string | null>(null);
   const [tourney,         setTourney]         = useState<TournamentState>(INITIAL_TOURNEY);
@@ -4339,11 +4560,12 @@ export default function TournamentApp() {
     { id: 'rankings', icon: '🏅', label: 'Rankings' },
     { id: 'history',  icon: '📜', label: 'History'  },
     { id: 'bets',     icon: '🎲', label: 'Bets'     },
+    { id: 'payment',  icon: '💰', label: 'Payments'  },
   ];
   const navAdmin = [
     { id: 'roster',     icon: '👥', label: 'Players'    },
     { id: 'tournament', icon: '🏆', label: 'Tournament'  },
-    { id: 'payment',    icon: '💰', label: 'Payments'    },
+    { id: 'analytics',  icon: '📊', label: 'Analytics'   },
   ];
 
   const activeView = view === 'setup' || view === 'champion' ? 'tournament' : view;
@@ -4357,11 +4579,26 @@ export default function TournamentApp() {
       <div className="blob-decoration blob-2" aria-hidden="true" />
       <div className="blob-decoration blob-3" aria-hidden="true" />
 
+      {/* ── Mobile Header Topbar ── */}
+      <div className="mobile-topbar">
+        <button
+          className="btn btn-ghost"
+          style={{ minHeight: 36, padding: '4px 10px', fontSize: 20, cursor: 'pointer' }}
+          onClick={() => setMobileMenuOpen(prev => !prev)}
+        >
+          {mobileMenuOpen ? '✕' : '☰'}
+        </button>
+        <span style={{ fontSize: 18, fontWeight: 800, color: 'var(--text)', flexGrow: 1 }}>
+          🏸 SmashTour
+        </span>
+        {isAdmin && <span className="badge badge-pro" style={{ fontSize: 9 }}>ADMIN</span>}
+      </div>
+
       <div className="app-shell">
         {/* ════════ SIDEBAR ════════ */}
-        <nav className="sidebar" role="navigation" aria-label="Main navigation">
+        <nav className={`sidebar${mobileMenuOpen ? ' open' : ''}`} role="navigation" aria-label="Main navigation">
           {/* Logo */}
-          <a className="sidebar-logo" href="#" onClick={e => { e.preventDefault(); setView('rankings'); }}>
+          <a className="sidebar-logo" href="#" onClick={e => { e.preventDefault(); setView('rankings'); setMobileMenuOpen(false); }}>
             <span className="logo-icon">🏸</span>
             <div>
               <div className="logo-text">SmashTour</div>
@@ -4377,7 +4614,10 @@ export default function TournamentApp() {
                 key={item.id}
                 id={`nav-${item.id}`}
                 className={`nav-link${activeView === item.id ? ' active' : ''}`}
-                onClick={() => setView(item.id as AppView)}
+                onClick={() => {
+                  setView(item.id as AppView);
+                  setMobileMenuOpen(false);
+                }}
               >
                 <span className="nav-icon">{item.icon}</span>
                 {item.label}
@@ -4396,8 +4636,10 @@ export default function TournamentApp() {
                 onClick={() => {
                   if (!isAdmin && item.id !== 'tournament') {
                     setShowLogin(true);
+                    setMobileMenuOpen(false);
                     return;
                   }
+                  setMobileMenuOpen(false);
                   if (item.id === 'tournament') {
                     setView(tourney.rounds.length > 0 ? (tourney.champion ? 'champion' : 'tournament') : 'roster');
                   } else {
@@ -4427,14 +4669,14 @@ export default function TournamentApp() {
                   <button
                     className="btn btn-ghost btn-sm"
                     style={{ flex: 1 }}
-                    onClick={() => setShowChangePw(true)}
+                    onClick={() => { setShowChangePw(true); setMobileMenuOpen(false); }}
                   >
                     🔑 Password
                   </button>
                   <button
                     className="btn btn-ghost btn-sm"
                     style={{ flex: 1 }}
-                    onClick={handleLogout}
+                    onClick={() => { handleLogout(); setMobileMenuOpen(false); }}
                   >
                     Exit
                   </button>
@@ -4444,7 +4686,7 @@ export default function TournamentApp() {
               <button
                 id="btn-admin-login"
                 className="btn btn-primary btn-full"
-                onClick={() => setShowLogin(true)}
+                onClick={() => { setShowLogin(true); setMobileMenuOpen(false); }}
               >
                 🔐 Admin Login
               </button>

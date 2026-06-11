@@ -18,9 +18,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(405).end();
   }
 
-  const admin = await requireAdmin(req, res);
-  if (!admin) return;
-
   const { mode = 'monthly', ref, from, to } = req.query as {
     mode?: string; ref?: string; from?: string; to?: string;
   };
