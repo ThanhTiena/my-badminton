@@ -3211,7 +3211,7 @@ function PaymentScreen({ onBack, tournamentPlayers = [], onOpenProfile }: { onBa
                                   style={{ ...cellStyle, color: a ? 'var(--text)' : 'var(--text3)', cursor: a ? 'default' : 'default', position: 'relative', ...(s.highlight ? { background: 'rgba(220,38,38,.13)' } : {}) }}
                                   onMouseEnter={a ? ((e: { currentTarget: HTMLElement }) => {
                                     const rect = e.currentTarget.getBoundingClientRect();
-                                    setPopover({ key: popKey, x: rect.left + rect.width / 2, y: rect.top, court: a.court, shuttle: a.shuttle, total: a.total, name, date: s.sessionDate, smashWeight: a.smashWeight, courtRate: a.courtRate, shuttleRate: a.shuttleRate, courtFee: a.courtFee, shuttlePool: a.shuttlePool, courtWeightSum: a.courtWeightSum, shuttleWeightSum: a.shuttleWeightSum });
+                                    setPopover({ key: popKey, x: rect.left + rect.width / 2 + window.scrollX, y: rect.top + window.scrollY, court: a.court, shuttle: a.shuttle, total: a.total, name, date: s.sessionDate, smashWeight: a.smashWeight, courtRate: a.courtRate, shuttleRate: a.shuttleRate, courtFee: a.courtFee, shuttlePool: a.shuttlePool, courtWeightSum: a.courtWeightSum, shuttleWeightSum: a.shuttleWeightSum });
                                   }) : undefined}
                                   onMouseLeave={() => setPopover(null)}
                                 >
@@ -3381,10 +3381,10 @@ function PaymentScreen({ onBack, tournamentPlayers = [], onOpenProfile }: { onBa
 
                 {/* ── Cell hover popover (fixed overlay) ── */}
                 {popover && (() => {
-                  const above = popover.y > 220;
+                  const above = (popover.y - window.scrollY) > 220;
                   return (
                     <div className="cell-popover" style={{
-                      left: Math.min(popover.x - 95, window.innerWidth - 210),
+                      left: Math.min(popover.x - 95, window.innerWidth + window.scrollX - 210),
                       top: above ? popover.y - 10 : popover.y + 36,
                       transform: above ? 'translateY(-100%)' : 'translateY(0)',
                     }}>
