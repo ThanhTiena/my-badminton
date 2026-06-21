@@ -1,6 +1,57 @@
 import { test, expect } from '@playwright/test';
 
 test.describe('SmashTour Badminton Club Navigation & UI Tests', () => {
+  test.beforeEach(async ({ page }) => {
+    // Intercept auth check
+    await page.route('/api/auth/me', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ authenticated: false }),
+      });
+    });
+
+    // Intercept active tournament check
+    await page.route('/api/tournament/active', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(null),
+      });
+    });
+
+    // Intercept players endpoint (used by standings/rankings)
+    await page.route('/api/players', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([
+          { _id: 'p1', name: 'Alice', group: 'pro', rankScore: 1200, stats: { wins: 5, losses: 2, titles: 1 } },
+        ]),
+      });
+    });
+
+    // Intercept rankings endpoint
+    await page.route('/api/rankings', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([
+          { _id: 'p1', name: 'Alice', group: 'pro', rankScore: 1200, stats: { wins: 5, losses: 2, titles: 1, tournamentsPlayed: 1 } },
+        ]),
+      });
+    });
+
+    // Intercept outstanding debts
+    await page.route(/\/api\/payment\/outstanding-debt.*/, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([]),
+      });
+    });
+  });
+
   test('should load the homepage and show sidebar public tabs', async ({ page }) => {
     // 1. Visit page
     await page.goto('/');
@@ -59,10 +110,10 @@ test.describe('SmashTour Badminton Club Navigation & UI Tests', () => {
     await expect(modalDialog).toBeVisible();
 
     // Verify presence of input fields
-    const usernameInput = page.locator('placeholder="Username…"');
+    const usernameInput = page.locator('#login-username');
     await expect(usernameInput).toBeVisible();
 
-    const passwordInput = page.locator('placeholder="Password…"');
+    const passwordInput = page.locator('#login-password');
     await expect(passwordInput).toBeVisible();
   });
 });

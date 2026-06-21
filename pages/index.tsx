@@ -4279,8 +4279,10 @@ export default function TournamentApp() {
   }, []);
 
   useEffect(() => {
-    if (view === 'setup') fetchPlayers();
-  }, [view, fetchPlayers]);
+    if (view === 'setup' || view === 'roster' || profilePlayer) {
+      fetchPlayers();
+    }
+  }, [view, profilePlayer, fetchPlayers]);
 
   function togglePlayer(p: PlayerDoc) {
     const player: Player = { name: p.name, group: p.group };
