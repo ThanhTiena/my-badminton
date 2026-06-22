@@ -482,25 +482,54 @@ export default function TrainingPage() {
 
     setIsPlaying(true);
     let frame = 0;
+    let shouldContinue = true;
     const totalPoses = selectedTechnique.poses.length;
+    const framesPerPose = 60; // 1 second per pose at 60fps
 
     const animate = () => {
-      frame++;
-      const poseIndex = Math.floor(frame / 60) % totalPoses;
-      setCurrentPoseIndex(poseIndex);
+      if (!shouldContinue) return;
 
-      if (isPlaying) {
-        animationRef.current = requestAnimationFrame(animate);
-      }
+      frame++;
+      const currentPose = Math.floor(frame / framesPerPose) % totalPoses;
+      const nextPose = (currentPose + 1) % totalPoses;
+      const progress = (frame % framesPerPose) / framesPerPose;
+
+      // Interpolate between current and next pose
+      const currentPoseData = selectedTechnique.poses[currentPose];
+      const nextPoseData = selectedTechnique.poses[nextPose];
+
+      const interpolatedJoints: Record<string, { x: number; y: number; z: number }> = {};
+
+      Object.keys(currentPoseData.joints).forEach(jointId => {
+        const current = currentPoseData.joints[jointId];
+        const next = nextPoseData.joints[jointId];
+
+        interpolatedJoints[jointId] = {
+          x: current.x + (next.x - current.x) * progress,
+          y: current.y + (next.y - current.y) * progress,
+          z: current.z + (next.z - current.z) * progress,
+        };
+      });
+
+      setCustomJoints(interpolatedJoints);
+      setCurrentPoseIndex(currentPose);
+
+      animationRef.current = requestAnimationFrame(animate);
     };
 
     animationRef.current = requestAnimationFrame(animate);
+
+    // Store the stop function in the ref so it can be called
+    return () => {
+      shouldContinue = false;
+    };
   };
 
   const stopAnimation = () => {
     setIsPlaying(false);
     if (animationRef.current) {
       cancelAnimationFrame(animationRef.current);
+      animationRef.current = null;
     }
   };
 
