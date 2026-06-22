@@ -12,7 +12,7 @@ import type { PlayerDoc, TournamentHistoryDoc, CourtSessionDoc, PaymentConfigDoc
 import { parseImportText, formatVND } from '@/lib/payment';
 import { Skeleton, SkeletonCard } from '@/components/ui/SkeletonLoader';
 
-type AppView = 'roster' | 'setup' | 'tournament' | 'champion' | 'history' | 'rankings' | 'payment' | 'bets' | 'analytics';
+type AppView = 'roster' | 'setup' | 'tournament' | 'champion' | 'history' | 'rankings' | 'payment' | 'bets' | 'analytics' | 'venues' | 'pricing';
 
 const INITIAL_TOURNEY: TournamentState = {
   pros: [], beginners: [], teams: [],
@@ -1962,6 +1962,388 @@ function currentWeekRef() {
   const jan4 = new Date(tmp.getFullYear(), 0, 4);
   const week = 1 + Math.round(((tmp.getTime() - jan4.getTime()) / 86400000 - 3 + ((jan4.getDay() + 6) % 7)) / 7);
   return `${year}-W${String(week).padStart(2, '0')}`;
+}
+
+/* ════════════════════════════════════════════════════════════════
+   VENUES SCREEN
+──────────────────────────────────────────────────────────────── */
+function VenuesScreen({ onBack }: { onBack: () => void }) {
+  const [venues, setVenues] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showForm, setShowForm] = useState(false);
+  const [editingVenue, setEditingVenue] = useState<any | null>(null);
+
+  // Form state
+  const [formData, setFormData] = useState({
+    name: '',
+    address: '',
+    district: '',
+    courtCount: 1,
+    baseHourlyRate: 200000,
+    facilities: [] as string[],
+    contactPerson: '',
+    contactPhone: '',
+    notes: '',
+  });
+
+  const fetchVenues = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await fetch('/api/venues?all=true');
+      const data = await res.json();
+      setVenues(data.venues || []);
+    } catch (err) {
+      console.error('Failed to fetch venues:', err);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchVenues();
+  }, [fetchVenues]);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      const url = editingVenue ? `/api/venues/${editingVenue._id}` : '/api/venues';
+      const method = editingVenue ? 'PATCH' : 'POST';
+
+      const res = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(formData),
+      });
+
+      if (!res.ok) {
+        const error = await res.json();
+        alert(error.error || 'Failed to save venue');
+        return;
+      }
+
+      await fetchVenues();
+      setShowForm(false);
+      setEditingVenue(null);
+      resetForm();
+    } catch (err) {
+      console.error('Failed to save venue:', err);
+      alert('Failed to save venue');
+    }
+  };
+
+  const handleEdit = (venue: any) => {
+    setEditingVenue(venue);
+    setFormData({
+      name: venue.name || '',
+      address: venue.address || '',
+      district: venue.district || '',
+      courtCount: venue.courtCount || 1,
+      baseHourlyRate: venue.baseHourlyRate || 200000,
+      facilities: venue.facilities || [],
+      contactPerson: venue.contactPerson || '',
+      contactPhone: venue.contactPhone || '',
+      notes: venue.notes || '',
+    });
+    setShowForm(true);
+  };
+
+  const handleDelete = async (venue: any) => {
+    if (!confirm(`Delete venue "${venue.name}"? This will mark it as inactive.`)) return;
+
+    try {
+      const res = await fetch(`/api/venues/${venue._id}`, { method: 'DELETE' });
+      if (!res.ok) {
+        const error = await res.json();
+        alert(error.error || 'Failed to delete venue');
+        return;
+      }
+      await fetchVenues();
+    } catch (err) {
+      console.error('Failed to delete venue:', err);
+      alert('Failed to delete venue');
+    }
+  };
+
+  const resetForm = () => {
+    setFormData({
+      name: '',
+      address: '',
+      district: '',
+      courtCount: 1,
+      baseHourlyRate: 200000,
+      facilities: [],
+      contactPerson: '',
+      contactPhone: '',
+      notes: '',
+    });
+  };
+
+  return (
+    <div className="screen">
+      <div className="screen-header">
+        <button className="btn btn-ghost" onClick={onBack}>← Back</button>
+        <div>
+          <h1 className="screen-title">Venue Management</h1>
+          <p className="screen-subtitle">Manage court venues and locations</p>
+        </div>
+        <button
+          className="btn btn-primary"
+          onClick={() => { setShowForm(true); setEditingVenue(null); resetForm(); }}
+        >
+          + Add Venue
+        </button>
+      </div>
+
+      {showForm && (
+        <Card style={{ marginBottom: 24 }}>
+          <CardTitle>{editingVenue ? 'Edit Venue' : 'Add New Venue'}</CardTitle>
+          <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 16 }}>
+              <div>
+                <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6 }}>
+                  Venue Name *
+                </label>
+                <input
+                  type="text"
+                  className="input"
+                  value={formData.name}
+                  onChange={e => setFormData(prev => ({ ...prev, name: e.target.value }))}
+                  required
+                  placeholder="Sunrise Sports Complex"
+                />
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6 }}>
+                  District
+                </label>
+                <input
+                  type="text"
+                  className="input"
+                  value={formData.district}
+                  onChange={e => setFormData(prev => ({ ...prev, district: e.target.value }))}
+                  placeholder="District 1"
+                />
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6 }}>
+                  Court Count *
+                </label>
+                <input
+                  type="number"
+                  className="input"
+                  value={formData.courtCount}
+                  onChange={e => setFormData(prev => ({ ...prev, courtCount: parseInt(e.target.value) || 1 }))}
+                  required
+                  min="1"
+                  max="50"
+                />
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6 }}>
+                  Base Hourly Rate (VND) *
+                </label>
+                <input
+                  type="number"
+                  className="input"
+                  value={formData.baseHourlyRate}
+                  onChange={e => setFormData(prev => ({ ...prev, baseHourlyRate: parseInt(e.target.value) || 0 }))}
+                  required
+                  min="0"
+                  step="1000"
+                  placeholder="200000"
+                />
+              </div>
+            </div>
+            <div>
+              <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6 }}>
+                Address
+              </label>
+              <input
+                type="text"
+                className="input"
+                value={formData.address}
+                onChange={e => setFormData(prev => ({ ...prev, address: e.target.value }))}
+                placeholder="123 Main St, District 1, HCMC"
+              />
+            </div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button type="submit" className="btn btn-primary">
+                {editingVenue ? 'Update Venue' : 'Create Venue'}
+              </button>
+              <button
+                type="button"
+                className="btn btn-ghost"
+                onClick={() => { setShowForm(false); setEditingVenue(null); resetForm(); }}
+              >
+                Cancel
+              </button>
+            </div>
+          </form>
+        </Card>
+      )}
+
+      {loading ? (
+        <div style={{ display: 'flex', justifyContent: 'center', padding: 40 }}>
+          <p style={{ color: 'var(--text2)' }}>Loading venues...</p>
+        </div>
+      ) : venues.length === 0 ? (
+        <Card>
+          <div style={{ textAlign: 'center', padding: 40 }}>
+            <span style={{ fontSize: 48, display: 'block', marginBottom: 16 }}>🏢</span>
+            <p style={{ color: 'var(--text2)' }}>No venues yet. Add your first venue to get started.</p>
+          </div>
+        </Card>
+      ) : (
+        <div style={{ display: 'grid', gap: 16 }}>
+          {venues.map(venue => (
+            <Card key={venue._id} style={{ opacity: venue.active ? 1 : 0.6 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', gap: 16 }}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                    <h3 style={{ fontSize: 18, fontWeight: 700, color: 'var(--text)' }}>
+                      {venue.name}
+                    </h3>
+                    {!venue.active && (
+                      <span style={{
+                        fontSize: 11,
+                        padding: '2px 8px',
+                        background: 'var(--error)',
+                        color: 'white',
+                        borderRadius: 4,
+                        fontWeight: 600,
+                      }}>
+                        Inactive
+                      </span>
+                    )}
+                  </div>
+                  {venue.address && (
+                    <p style={{ fontSize: 13, color: 'var(--text2)', marginBottom: 4 }}>
+                      📍 {venue.address}
+                    </p>
+                  )}
+                  <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginTop: 12 }}>
+                    <span style={{ fontSize: 13, color: 'var(--text2)' }}>
+                      🏟️ {venue.courtCount} courts
+                    </span>
+                    <span style={{ fontSize: 13, color: 'var(--text2)' }}>
+                      💵 {venue.baseHourlyRate.toLocaleString('vi-VN')} VND/hour
+                    </span>
+                  </div>
+                </div>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button
+                    className="btn btn-ghost btn-sm"
+                    onClick={() => handleEdit(venue)}
+                  >
+                    Edit
+                  </button>
+                  <button
+                    className="btn btn-ghost btn-sm"
+                    onClick={() => handleDelete(venue)}
+                  >
+                    Delete
+                  </button>
+                </div>
+              </div>
+            </Card>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ════════════════════════════════════════════════════════════════
+   PRICING RULES SCREEN
+──────────────────────────────────────────────────────────────── */
+function PricingRulesScreen({ onBack }: { onBack: () => void }) {
+  const [rules, setRules] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showForm, setShowForm] = useState(false);
+
+  const fetchRules = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await fetch('/api/pricing-rules?all=true');
+      const data = await res.json();
+      setRules(data.rules || []);
+    } catch (err) {
+      console.error('Failed to fetch pricing rules:', err);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchRules();
+  }, [fetchRules]);
+
+  return (
+    <div className="screen">
+      <div className="screen-header">
+        <button className="btn btn-ghost" onClick={onBack}>← Back</button>
+        <div>
+          <h1 className="screen-title">Pricing Rules</h1>
+          <p className="screen-subtitle">Manage time-based and event pricing</p>
+        </div>
+        <button
+          className="btn btn-primary"
+          onClick={() => setShowForm(true)}
+        >
+          + Add Rule
+        </button>
+      </div>
+
+      {loading ? (
+        <div style={{ display: 'flex', justifyContent: 'center', padding: 40 }}>
+          <p style={{ color: 'var(--text2)' }}>Loading pricing rules...</p>
+        </div>
+      ) : rules.length === 0 ? (
+        <Card>
+          <div style={{ textAlign: 'center', padding: 40 }}>
+            <span style={{ fontSize: 48, display: 'block', marginBottom: 16 }}>💵</span>
+            <p style={{ color: 'var(--text2)' }}>No pricing rules yet. Add your first rule to enable dynamic pricing.</p>
+          </div>
+        </Card>
+      ) : (
+        <div style={{ display: 'grid', gap: 16 }}>
+          {rules.map(rule => (
+            <Card key={rule._id} style={{ opacity: rule.active ? 1 : 0.6 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', gap: 16 }}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                    <h3 style={{ fontSize: 18, fontWeight: 700, color: 'var(--text)' }}>
+                      {rule.ruleName}
+                    </h3>
+                    {!rule.active && (
+                      <span style={{
+                        fontSize: 11,
+                        padding: '2px 8px',
+                        background: 'var(--error)',
+                        color: 'white',
+                        borderRadius: 4,
+                        fontWeight: 600,
+                      }}>
+                        Inactive
+                      </span>
+                    )}
+                  </div>
+                  <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginTop: 8, fontSize: 13, color: 'var(--text2)' }}>
+                    <span>
+                      {rule.rateType === 'multiplier' ? `${rule.rateValue}x` : `${rule.rateValue.toLocaleString('vi-VN')} VND`}
+                    </span>
+                    <span>Priority: {rule.priority}</span>
+                    {rule.daysOfWeek && <span>Days: {rule.daysOfWeek.join(', ')}</span>}
+                    {rule.timeStart && rule.timeEnd && <span>{rule.timeStart} - {rule.timeEnd}</span>}
+                  </div>
+                </div>
+              </div>
+            </Card>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
 
 function PaymentScreen({ onBack, tournamentPlayers = [], onOpenProfile }: { onBack: () => void; tournamentPlayers?: string[]; onOpenProfile?: (name: string) => void }) {
@@ -4939,6 +5321,8 @@ export default function TournamentApp() {
     { id: 'roster',     icon: '👥', label: 'Players'    },
     { id: 'tournament', icon: '🏆', label: 'Tournament'  },
     { id: 'analytics',  icon: '📊', label: 'Analytics'   },
+    { id: 'venues',     icon: '🏢', label: 'Venues'      },
+    { id: 'pricing',    icon: '💵', label: 'Pricing'     },
   ];
 
   const activeView = view === 'setup' || view === 'champion' ? 'tournament' : view;
@@ -5126,6 +5510,12 @@ export default function TournamentApp() {
               tournamentPlayers={[...tourney.pros, ...tourney.beginners].map(p => p.name)}
               onOpenProfile={setProfilePlayer}
             />
+          )}
+          {view === 'venues' && (
+            <VenuesScreen onBack={() => setView('payment')} />
+          )}
+          {view === 'pricing' && (
+            <PricingRulesScreen onBack={() => setView('payment')} />
           )}
         </main>
       </div>
