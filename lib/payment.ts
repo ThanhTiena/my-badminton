@@ -64,19 +64,38 @@ export interface ComputeInput {
   courtFee: number;
   numShuttlecocks: number;
   shuttlecockUnitPrice: number;
+  /** Optional: pricing rule metadata to store with session */
+  appliedPricingRule?: {
+    ruleId: string;
+    ruleName: string;
+    rateApplied: number;
+    rateType: 'multiplier' | 'fixed';
+    baseCourtFee?: number;
+  };
 }
 
 export interface ComputeResult {
   shuttlecockTotal: number;
   totalCost: number;
   players: SessionPlayer[];
+  /** Pricing metadata (passed through from input if provided) */
+  pricingMetadata?: {
+    ruleId: string;
+    ruleName: string;
+    rateApplied: number;
+    rateType: 'multiplier' | 'fixed';
+    baseCourtFee: number;
+  };
 }
 
 /**
  * Compute each player's exact share (2 dp) and rounded share (nearest 1 000).
+ *
+ * If appliedPricingRule is provided, the courtFee is assumed to already include
+ * the pricing rule adjustment. The metadata is passed through to the result.
  */
 export function computeSessionAmounts(input: ComputeInput): ComputeResult {
-  const { players, courtFee, numShuttlecocks, shuttlecockUnitPrice } = input;
+  const { players, courtFee, numShuttlecocks, shuttlecockUnitPrice, appliedPricingRule } = input;
   const n = players.length;
   if (n === 0) throw new Error('Session must have at least one player');
 
@@ -106,7 +125,16 @@ export function computeSessionAmounts(input: ComputeInput): ComputeResult {
     };
   });
 
-  return { shuttlecockTotal, totalCost, players: result };
+  // Pass through pricing metadata if provided
+  const pricingMetadata = appliedPricingRule ? {
+    ruleId: appliedPricingRule.ruleId,
+    ruleName: appliedPricingRule.ruleName,
+    rateApplied: appliedPricingRule.rateApplied,
+    rateType: appliedPricingRule.rateType,
+    baseCourtFee: appliedPricingRule.baseCourtFee ?? courtFee,
+  } : undefined;
+
+  return { shuttlecockTotal, totalCost, players: result, pricingMetadata };
 }
 
 /* ── Import text parser ──────────────────────────────────── */

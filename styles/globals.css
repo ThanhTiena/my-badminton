@@ -1801,6 +1801,7 @@ input:focus-visible,
     border-right: none;
     max-height: 70vh;
     overflow-y: auto;
+    overflow-x: auto;
   }
 
   .payment-table {

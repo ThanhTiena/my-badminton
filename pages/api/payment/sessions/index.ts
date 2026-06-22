@@ -7,8 +7,9 @@ import { ObjectId } from 'mongodb';
 import { getDb } from '@/lib/db/client';
 import { COLLECTIONS } from '@/lib/db/constants';
 import { requireAdmin } from '@/lib/auth/middleware';
-import type { CourtSessionDoc, PaymentConfigDoc, ImportRow } from '@/lib/models';
+import type { CourtSessionDoc, PaymentConfigDoc, ImportRow, VenueDoc, PricingRuleDoc } from '@/lib/models';
 import { computeSessionAmounts, getISOWeek } from '@/lib/payment';
+import { calculateCourtFee } from '@/lib/pricing';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   const admin = await requireAdmin(req, res);
@@ -62,6 +63,21 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       });
     }
 
+    // Fetch all active pricing rules once (for performance)
+    const rulesCol = db.collection<PricingRuleDoc>(COLLECTIONS.PRICING_RULES);
+    const allRules = await rulesCol.find({ active: true }).toArray();
+
+    // Fetch venue data if needed (for snapshots)
+    const venueCol = db.collection<VenueDoc>(COLLECTIONS.VENUES);
+    const venueIds = body
+      .map(row => row.venueId)
+      .filter((id): id is string => !!id);
+    const uniqueVenueIds = Array.from(new Set(venueIds));
+    const venues = await venueCol
+      .find({ _id: { $in: uniqueVenueIds.map(id => new ObjectId(id)) } })
+      .toArray();
+    const venueMap = new Map(venues.map(v => [v._id!.toString(), v]));
+
     const docs: CourtSessionDoc[] = body.map(row => {
       const date = new Date(row.date);
       const playersWithWeight = row.players.map(name => {
@@ -73,18 +89,85 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           shuttleRate: cfg?.shuttleRate ?? 1.0,
         };
       });
+
+      // NEW: Calculate pricing if venue and time provided
+      let finalCourtFee = row.courtFee;
+      let baseCourtFee: number | undefined;
+      let pricingRuleId: ObjectId | undefined;
+      let pricingRuleName: string | undefined;
+      let pricingRateApplied: number | undefined;
+      let pricingRateType: 'multiplier' | 'fixed' | undefined;
+      let appliedPricingRule: {
+        ruleId: string;
+        ruleName: string;
+        rateApplied: number;
+        rateType: 'multiplier' | 'fixed';
+        baseCourtFee?: number;
+      } | undefined;
+
+      if (row.venueId && row.timeStart) {
+        const venue = venueMap.get(row.venueId);
+        const calculationResult = calculateCourtFee(
+          {
+            venueId: row.venueId,
+            sessionDate: row.date,
+            timeStart: row.timeStart,
+            duration: row.duration,
+            baseRate: venue?.baseHourlyRate,
+          },
+          allRules
+        );
+
+        // Use calculated court fee
+        finalCourtFee = calculationResult.finalCourtFee;
+        baseCourtFee = calculationResult.baseCourtFee;
+
+        // Store pricing rule metadata if a rule was applied
+        if (calculationResult.appliedRules.length > 0) {
+          const topRule = calculationResult.appliedRules[0];
+          pricingRuleId = new ObjectId(topRule.ruleId);
+          pricingRuleName = topRule.ruleName;
+          pricingRateApplied = topRule.rateValue;
+          pricingRateType = topRule.rateType;
+
+          appliedPricingRule = {
+            ruleId: topRule.ruleId,
+            ruleName: topRule.ruleName,
+            rateApplied: topRule.rateValue,
+            rateType: topRule.rateType,
+            baseCourtFee,
+          };
+        }
+      }
+
       const { shuttlecockTotal, totalCost, players } = computeSessionAmounts({
         players:              playersWithWeight,
-        courtFee:             row.courtFee,
+        courtFee:             finalCourtFee,
         numShuttlecocks:      row.numShuttlecocks,
         shuttlecockUnitPrice: row.shuttlecockUnitPrice,
+        appliedPricingRule,
       });
+
+      // Venue snapshot data
+      const venue = row.venueId ? venueMap.get(row.venueId) : undefined;
+
       return {
         sessionDate:              row.date,
         year:                     date.getFullYear(),
         month:                    date.getMonth() + 1,
         week:                     getISOWeek(row.date),
-        courtFee:                 row.courtFee,
+        // Venue reference
+        venueId:                  venue?._id,
+        venueName:                venue?.name,
+        venueAddress:             venue?.address,
+        // Pricing data
+        pricingRuleId,
+        pricingRuleName,
+        pricingRateApplied,
+        pricingRateType,
+        baseCourtFee,
+        // Session costs
+        courtFee:                 finalCourtFee,
         numShuttlecocks:          row.numShuttlecocks,
         shuttlecockUnitPrice:     row.shuttlecockUnitPrice,
         shuttlecockTotal,
