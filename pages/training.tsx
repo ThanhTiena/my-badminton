@@ -200,6 +200,8 @@ export default function TrainingPage() {
   const [customJoints, setCustomJoints] = useState<Record<string, { x: number; y: number; z: number }>>({});
   const [loading, setLoading] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
+  const [favoriteIds, setFavoriteIds] = useState<string[]>([]);
+  const [favoritesLoading, setFavoritesLoading] = useState(false);
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const animationRef = useRef<number | null>(null);
@@ -207,7 +209,20 @@ export default function TrainingPage() {
   // Fetch techniques from API on mount
   useEffect(() => {
     fetchTechniques();
+    fetchFavorites();
   }, []);
+
+  const fetchFavorites = async () => {
+    try {
+      const res = await fetch('/api/progress/favorites');
+      if (res.ok) {
+        const data = await res.json();
+        setFavoriteIds(data.favoriteIds || []);
+      }
+    } catch (error) {
+      console.error('Failed to fetch favorites:', error);
+    }
+  };
 
   const fetchTechniques = async () => {
     try {
@@ -469,6 +484,56 @@ export default function TrainingPage() {
       setCustomJoints(selectedTechnique.poses[currentPoseIndex].joints);
     }
   };
+
+  const toggleFavorite = async (techniqueId: string) => {
+    const isFavorited = favoriteIds.includes(techniqueId);
+    setFavoritesLoading(true);
+
+    try {
+      if (isFavorited) {
+        // Remove from favorites
+        const res = await fetch(`/api/progress/favorites?techniqueId=${techniqueId}`, {
+          method: 'DELETE',
+        });
+        if (res.ok) {
+          setFavoriteIds(favoriteIds.filter(id => id !== techniqueId));
+        }
+      } else {
+        // Add to favorites
+        const res = await fetch('/api/progress/favorites', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ techniqueId }),
+        });
+        if (res.ok) {
+          setFavoriteIds([...favoriteIds, techniqueId]);
+        }
+      }
+    } catch (error) {
+      console.error('Failed to toggle favorite:', error);
+    } finally {
+      setFavoritesLoading(false);
+    }
+  };
+
+  const recordView = async (techniqueId: string) => {
+    try {
+      await fetch('/api/progress/history', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ techniqueId }),
+      });
+    } catch (error) {
+      console.error('Failed to record view:', error);
+    }
+  };
+
+  // Record view when technique is selected
+  useEffect(() => {
+    if (selectedTechnique?._id) {
+      recordView(selectedTechnique._id);
+    }
+  }, [selectedTechnique?._id]);
 
   return (
     <>
@@ -765,9 +830,33 @@ export default function TrainingPage() {
                 border: '1px solid rgba(255,255,255,.1)',
                 padding: 20,
               }}>
-                <h2 style={{ fontSize: 18, fontWeight: 700, color: '#fff', marginBottom: 16 }}>
-                  💡 Key Points
-                </h2>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                  <h2 style={{ fontSize: 18, fontWeight: 700, color: '#fff', margin: 0 }}>
+                    💡 Key Points
+                  </h2>
+                  {selectedTechnique?._id && (
+                    <button
+                      onClick={() => toggleFavorite(selectedTechnique._id!)}
+                      disabled={favoritesLoading}
+                      style={{
+                        background: favoriteIds.includes(selectedTechnique._id)
+                          ? 'rgba(239,68,68,.2)'
+                          : 'rgba(255,255,255,.1)',
+                        border: favoriteIds.includes(selectedTechnique._id)
+                          ? '1px solid #ef4444'
+                          : '1px solid rgba(255,255,255,.2)',
+                        borderRadius: 8,
+                        padding: '8px 12px',
+                        fontSize: 20,
+                        cursor: favoritesLoading ? 'wait' : 'pointer',
+                        transition: 'all 0.2s',
+                      }}
+                      title={favoriteIds.includes(selectedTechnique._id) ? 'Remove from favorites' : 'Add to favorites'}
+                    >
+                      {favoriteIds.includes(selectedTechnique._id) ? '❤️' : '🤍'}
+                    </button>
+                  )}
+                </div>
 
                 {selectedTechnique ? (
                   <>
