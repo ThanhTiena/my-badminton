@@ -58,5 +58,18 @@ export async function createIndexes() {
     db.collection(COLLECTIONS.PRICING_RULES).createIndex({ venueId: 1, active: 1, priority: -1 }),
     db.collection(COLLECTIONS.PRICING_RULES).createIndex({ active: 1, dateStart: 1, dateEnd: 1 }),
     db.collection(COLLECTIONS.PRICING_RULES).createIndex({ createdAt: -1 }),
+
+    // NEW Sprint 2: session_polls
+    db.collection(COLLECTIONS.POLLS).createIndex({ sessionDate: 1, status: 1 }),
+    db.collection(COLLECTIONS.POLLS).createIndex({ status: 1, rsvpDeadline: 1 }),
+    db.collection(COLLECTIONS.POLLS).createIndex({ createdBy: 1, createdAt: -1 }),
+
+    // NEW Sprint 2: poll_responses
+    db.collection(COLLECTIONS.POLL_RESPONSES).createIndex(
+      { pollId: 1, playerId: 1 },
+      { unique: true }
+    ),
+    db.collection(COLLECTIONS.POLL_RESPONSES).createIndex({ pollId: 1, response: 1 }),
+    db.collection(COLLECTIONS.POLL_RESPONSES).createIndex({ playerId: 1, respondedAt: -1 }),
   ]);
 }

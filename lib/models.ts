@@ -76,6 +76,11 @@ export interface CourtSessionDoc {
    * False/absent = shuttlecocks were bought individually that day (cost split per-session as normal).
    */
   shuttlecocksBulkPurchase?: boolean;
+
+  // NEW Sprint 2: Poll Automation
+  draftMode?: boolean;                 // True if created from poll (needs admin review)
+  pollId?: ObjectId;                   // Reference to originating SessionPollDoc
+
   importedAt: Date;
 }
 
@@ -171,6 +176,11 @@ export interface ActiveTournamentDoc {
   key: 'current';
   /** ISO timestamp of the last state change */
   updatedAt: Date;
+
+  // NEW Sprint 2: Poll Automation
+  draftMode?: boolean;                 // True if created from poll (needs admin review)
+  pollId?: ObjectId;                   // Reference to originating SessionPollDoc
+
   /** The full serialised TournamentState from lib/tournament.ts */
   state: {
     pros:            { name: string; group: 'pro' | 'beg' }[];
@@ -400,4 +410,71 @@ export interface PricingRuleDoc {
   createdAt: Date;
   updatedAt: Date;
   createdBy?: string;                  // Admin username
+}
+
+/* ─────────────────────────────────────────────────────────────
+   SESSION POLLS — SessionPollDoc  (collection: "session_polls")
+
+   Attendance polling system for reducing no-shows and improving
+   RSVP rates.  Sprint 2: S2H.1 — Polling System Foundation
+───────────────────────────────────────────────────────────── */
+export interface SessionPollDoc {
+  _id?: ObjectId;
+
+  // Session Details
+  sessionDate: string;                 // "2026-06-25" (ISO 8601 date)
+  sessionTime?: string;                // "18:00-20:00" (optional)
+  venueId?: ObjectId;                  // Reference to VenueDoc
+  venueName?: string;                  // Snapshot of venue name
+
+  // Poll Configuration
+  pollTitle: string;                   // "Friday Night Badminton - June 25"
+  pollDescription?: string;            // "Join us for an exciting session!"
+  rsvpDeadline: Date;                  // When poll closes (ISO timestamp)
+  maxPlayers?: number;                 // Optional capacity limit
+
+  // Targeting
+  targetPlayers: 'all_active' | 'pro_only' | 'beg_only' | 'custom';
+  customPlayerIds?: ObjectId[];        // Used when targetPlayers = 'custom'
+
+  // State
+  status: 'draft' | 'open' | 'closed' | 'cancelled';
+
+  // NEW Sprint 2: Poll Automation Flags
+  autoCreateTournament?: boolean;      // Auto-create tournament when poll closes
+  autoCreatePayment?: boolean;         // Auto-create payment session when poll closes
+  tournamentCreated?: boolean;         // True if tournament draft created
+  paymentCreated?: boolean;            // True if payment session draft created
+  tournamentId?: ObjectId;             // Reference to created ActiveTournamentDoc
+  paymentSessionId?: ObjectId;         // Reference to created CourtSessionDoc
+
+  // Audit
+  createdBy: string;                   // Admin username
+  createdAt: Date;
+  publishedAt?: Date;                  // When poll went live
+  closedAt?: Date;                     // When poll was closed
+}
+
+/* ─────────────────────────────────────────────────────────────
+   POLL RESPONSES — PollResponseDoc  (collection: "poll_responses")
+
+   Individual player responses to session polls.
+   Sprint 2: S2H.1 — Polling System Foundation
+───────────────────────────────────────────────────────────── */
+export interface PollResponseDoc {
+  _id?: ObjectId;
+  pollId: ObjectId;                    // Reference to SessionPollDoc
+
+  // Player
+  playerId: ObjectId;                  // Reference to PlayerDoc
+  playerName: string;                  // Snapshot for display
+
+  // Response
+  response: 'yes' | 'no' | 'maybe';
+  guestCount?: number;                 // How many guests they're bringing
+  note?: string;                       // Optional comment from player
+
+  // Audit
+  respondedAt: Date;                   // First response timestamp
+  updatedAt?: Date;                    // Last update timestamp
 }

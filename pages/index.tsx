@@ -8,11 +8,12 @@ import {
   buildRoundRobin, getRoundLabelForMatch, findMatch as findMatchInRounds,
   getRRSorted, getCurrentRound, resetMatchCounter, reshuffleUnstartedMatches, getNextMatchId,
 } from '@/lib/tournament';
-import type { PlayerDoc, TournamentHistoryDoc, CourtSessionDoc, PaymentConfigDoc, ImportRow, BetDoc } from '@/lib/models';
+import type { PlayerDoc, TournamentHistoryDoc, CourtSessionDoc, PaymentConfigDoc, ImportRow, BetDoc, SessionPollDoc, PollResponseDoc, VenueDoc } from '@/lib/models';
+import { calculateCourtSuggestion } from '@/lib/polls';
 import { parseImportText, formatVND } from '@/lib/payment';
 import { Skeleton, SkeletonCard } from '@/components/ui/SkeletonLoader';
 
-type AppView = 'roster' | 'setup' | 'tournament' | 'champion' | 'history' | 'rankings' | 'payment' | 'bets' | 'analytics' | 'venues' | 'pricing';
+type AppView = 'roster' | 'setup' | 'tournament' | 'champion' | 'history' | 'rankings' | 'payment' | 'bets' | 'analytics' | 'venues' | 'pricing' | 'attendance';
 
 const INITIAL_TOURNEY: TournamentState = {
   pros: [], beginners: [], teams: [],
@@ -1795,8 +1796,10 @@ function RankingsScreen({ onBack, onOpenProfile }: { onBack: () => void; onOpenP
   return (
     <div className="anim-fade">
       <button className="back-btn" onClick={onBack}>← Back</button>
-      <p className="page-title">🏅 Rankings</p>
-      <p className="page-sub">Lifetime leaderboard — updated automatically after every tournament.</p>
+      <div className="page-header">
+        <h1 className="page-title">🏅 Rankings</h1>
+        <p className="page-sub">Lifetime leaderboard — updated automatically after every tournament.</p>
+      </div>
 
       {/* Score formula legend */}
       <div className="score-legend">
@@ -1901,11 +1904,22 @@ function RankingsScreen({ onBack, onOpenProfile }: { onBack: () => void; onOpenP
                       <tr key={p.name}>
                         <td><span className={`rank-num ${rankClass(i)}`}>{i + 1}</span></td>
                         <td>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                             <Badge group={p.group} />
-                            <div>
-                              <strong style={{ fontSize: 14, cursor: onOpenProfile ? 'pointer' : 'default', textDecoration: onOpenProfile ? 'underline' : 'none' }} onClick={() => onOpenProfile?.(p.name)}>{p.name}</strong>
-                              <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 1 }}>
+                            <div style={{ flex: 1 }}>
+                              <strong
+                                style={{
+                                  fontSize: 15,
+                                  fontWeight: 700,
+                                  cursor: onOpenProfile ? 'pointer' : 'default',
+                                  textDecoration: onOpenProfile ? 'underline' : 'none',
+                                  color: 'var(--text)'
+                                }}
+                                onClick={() => onOpenProfile?.(p.name)}
+                              >
+                                {p.name}
+                              </strong>
+                              <div style={{ fontSize: 12, color: 'var(--text3)', marginTop: 3, fontWeight: 500 }}>
                                 {winRate}% win rate · {s.tournamentsPlayed} tournament{s.tournamentsPlayed !== 1 ? 's' : ''}
                               </div>
                             </div>
@@ -4728,6 +4742,503 @@ function BetHistoryScreen({ onBack }: { onBack: () => void }) {
 }
 
 /* ════════════════════════════════════════════════════
+   ATTENDANCE SCREEN — Session Polls & RSVPs
+   Sprint 2: S2H.1 — Polling System Foundation
+════════════════════════════════════════════════════ */
+function AttendanceScreen({ onBack }: { onBack: () => void }) {
+  const [polls, setPolls] = useState<(SessionPollDoc & {
+    yesCount: number;
+    maybeCount: number;
+    noCount: number;
+    guestCount: number;
+    responseCount: number;
+  })[]>([]);
+  const [venues, setVenues] = useState<VenueDoc[]>([]);
+  const [players, setPlayers] = useState<PlayerDoc[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [selectedPoll, setSelectedPoll] = useState<string | null>(null);
+  const [responses, setResponses] = useState<PollResponseDoc[]>([]);
+  const [responsesLoading, setResponsesLoading] = useState(false);
+
+  // Form state
+  const [formData, setFormData] = useState({
+    sessionDate: '',
+    sessionTime: '',
+    venueId: '',
+    pollTitle: '',
+    pollDescription: '',
+    rsvpDeadline: '',
+    maxPlayers: '',
+    targetPlayers: 'all_active' as 'all_active' | 'pro_only' | 'beg_only' | 'custom',
+    status: 'draft' as 'draft' | 'open',
+    autoCreateTournament: false,
+    autoCreatePayment: false,
+  });
+  const [creating, setCreating] = useState(false);
+  const [error, setError] = useState('');
+
+  // Fetch data
+  const fetchPolls = useCallback(async () => {
+    const res = await fetch('/api/polls?upcoming=true');
+    const data = await res.json();
+    setPolls(data.polls || []);
+    setLoading(false);
+  }, []);
+
+  useEffect(() => {
+    Promise.all([
+      fetch('/api/polls?upcoming=true').then(r => r.json()),
+      fetch('/api/venues').then(r => r.json()),
+      fetch('/api/players').then(r => r.json()),
+    ]).then(([pollsData, venuesData, playersData]) => {
+      setPolls(pollsData.polls || []);
+      setVenues(venuesData.venues || []);
+      setPlayers(playersData.players || []);
+      setLoading(false);
+    });
+  }, []);
+
+  // Fetch responses for selected poll
+  useEffect(() => {
+    if (!selectedPoll) {
+      setResponses([]);
+      return;
+    }
+
+    setResponsesLoading(true);
+    fetch(`/api/polls/${selectedPoll}/responses`)
+      .then(r => r.json())
+      .then(data => {
+        setResponses(data.responses || []);
+        setResponsesLoading(false);
+      })
+      .catch(() => setResponsesLoading(false));
+  }, [selectedPoll]);
+
+  const handleCreatePoll = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setCreating(true);
+    setError('');
+
+    try {
+      const venue = venues.find(v => String(v._id) === formData.venueId);
+
+      const res = await fetch('/api/polls', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...formData,
+          venueName: venue?.name,
+          maxPlayers: formData.maxPlayers ? Number(formData.maxPlayers) : undefined,
+          rsvpDeadline: new Date(formData.rsvpDeadline).toISOString(),
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to create poll');
+      }
+
+      setShowCreateModal(false);
+      setFormData({
+        sessionDate: '',
+        sessionTime: '',
+        venueId: '',
+        pollTitle: '',
+        pollDescription: '',
+        rsvpDeadline: '',
+        maxPlayers: '',
+        targetPlayers: 'all_active',
+        status: 'draft',
+        autoCreateTournament: false,
+        autoCreatePayment: false,
+      });
+      await fetchPolls();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to create poll');
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  const handlePublishPoll = async (pollId: string) => {
+    if (!confirm('Publish this poll? Players will be able to RSVP.')) return;
+
+    await fetch(`/api/polls/${pollId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: 'open' }),
+    });
+
+    await fetchPolls();
+  };
+
+  const handleClosePoll = async (pollId: string) => {
+    if (!confirm('Close this poll? No more RSVPs will be accepted. Automation will run if enabled.')) return;
+
+    const res = await fetch(`/api/polls/${pollId}/close`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+    });
+
+    const data = await res.json();
+
+    if (res.ok) {
+      let message = 'Poll closed successfully';
+      if (data.tournamentCreated) {
+        message += '\n✅ Tournament draft created';
+      }
+      if (data.paymentCreated) {
+        message += '\n✅ Payment session draft created';
+      }
+      if (data.tournamentCreated || data.paymentCreated) {
+        message += '\n\nCheck the admin dashboard to review and finalize.';
+      }
+      alert(message);
+    }
+
+    await fetchPolls();
+  };
+
+  const getPollUrl = (pollId: string) => {
+    return `${window.location.origin}/poll/${pollId}`;
+  };
+
+  const copyPollUrl = (pollId: string) => {
+    const url = getPollUrl(pollId);
+    navigator.clipboard.writeText(url);
+    alert('Poll URL copied to clipboard!');
+  };
+
+  return (
+    <div className="anim-fade">
+      <button className="back-btn" onClick={onBack}>← Back</button>
+      <p className="page-title">✋ Attendance Polling</p>
+      <p className="page-sub">Create polls to track session attendance and reduce no-shows.</p>
+
+      <div style={{ marginBottom: 20 }}>
+        <Btn variant="primary" onClick={() => setShowCreateModal(true)}>
+          ➕ Create New Poll
+        </Btn>
+      </div>
+
+      {loading ? (
+        <EmptyState icon="⏳" text="Loading polls…" />
+      ) : polls.length === 0 ? (
+        <EmptyState icon="✋" text="No upcoming polls. Create your first one!" />
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          {polls.map((poll) => {
+            const courtSuggestion = calculateCourtSuggestion(
+              poll.yesCount,
+              poll.maybeCount,
+              poll.noCount,
+              poll.guestCount
+            );
+
+            const isSelected = selectedPoll === String(poll._id);
+
+            return (
+              <Card key={String(poll._id)}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 4 }}>{poll.pollTitle}</div>
+                    <div style={{ fontSize: 13, color: 'var(--text2)' }}>
+                      📅 {new Date(poll.sessionDate).toLocaleDateString()}
+                      {poll.sessionTime && ` • ${poll.sessionTime}`}
+                      {poll.venueName && ` • ${poll.venueName}`}
+                    </div>
+                  </div>
+                  <span style={{
+                    padding: '4px 10px', borderRadius: 6,
+                    background: poll.status === 'open' ? 'rgba(34,197,94,.15)' : poll.status === 'draft' ? 'rgba(156,163,175,.15)' : 'rgba(239,68,68,.15)',
+                    color: poll.status === 'open' ? 'var(--success)' : poll.status === 'draft' ? 'var(--text3)' : 'var(--danger)',
+                    fontSize: 11, fontWeight: 700,
+                  }}>
+                    {poll.status.toUpperCase()}
+                  </span>
+                </div>
+
+                {/* Response summary */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8, marginBottom: 12 }}>
+                  <div style={{ textAlign: 'center', padding: '8px 0', background: 'var(--bg3)', borderRadius: 8 }}>
+                    <div style={{ fontSize: 20, fontWeight: 700, color: 'var(--success)' }}>{poll.yesCount + poll.guestCount}</div>
+                    <div style={{ fontSize: 11, color: 'var(--text3)' }}>Attending</div>
+                  </div>
+                  <div style={{ textAlign: 'center', padding: '8px 0', background: 'var(--bg3)', borderRadius: 8 }}>
+                    <div style={{ fontSize: 20, fontWeight: 700, color: 'var(--accent)' }}>{poll.maybeCount}</div>
+                    <div style={{ fontSize: 11, color: 'var(--text3)' }}>Maybe</div>
+                  </div>
+                  <div style={{ textAlign: 'center', padding: '8px 0', background: 'var(--bg3)', borderRadius: 8 }}>
+                    <div style={{ fontSize: 20, fontWeight: 700, color: 'var(--danger)' }}>{poll.noCount}</div>
+                    <div style={{ fontSize: 11, color: 'var(--text3)' }}>No</div>
+                  </div>
+                  <div style={{ textAlign: 'center', padding: '8px 0', background: 'var(--bg3)', borderRadius: 8 }}>
+                    <div style={{ fontSize: 20, fontWeight: 700, color: 'var(--primary)' }}>{courtSuggestion.suggestedCourts}</div>
+                    <div style={{ fontSize: 11, color: 'var(--text3)' }}>Courts</div>
+                  </div>
+                </div>
+
+                <div style={{ fontSize: 12, color: 'var(--text3)', marginBottom: 12, fontStyle: 'italic' }}>
+                  {courtSuggestion.reasoning}
+                </div>
+
+                {/* Actions */}
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  {poll.status === 'draft' && (
+                    <Btn variant="success" size="sm" onClick={() => handlePublishPoll(String(poll._id))}>
+                      📢 Publish
+                    </Btn>
+                  )}
+                  {poll.status === 'open' && (
+                    <>
+                      <Btn variant="secondary" size="sm" onClick={() => copyPollUrl(String(poll._id))}>
+                        🔗 Copy Link
+                      </Btn>
+                      <Btn variant="secondary" size="sm" onClick={() => setSelectedPoll(isSelected ? null : String(poll._id))}>
+                        {isSelected ? 'Hide' : 'View'} Responses
+                      </Btn>
+                      <Btn variant="orange" size="sm" onClick={() => handleClosePoll(String(poll._id))}>
+                        🔒 Close Poll
+                      </Btn>
+                    </>
+                  )}
+                  {poll.status === 'closed' && (
+                    <Btn variant="secondary" size="sm" onClick={() => setSelectedPoll(isSelected ? null : String(poll._id))}>
+                      {isSelected ? 'Hide' : 'View'} Responses
+                    </Btn>
+                  )}
+                </div>
+
+                {/* Responses */}
+                {isSelected && (
+                  <div style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid var(--border)' }}>
+                    {responsesLoading ? (
+                      <div style={{ textAlign: 'center', color: 'var(--text3)', fontSize: 13 }}>Loading responses...</div>
+                    ) : responses.length === 0 ? (
+                      <div style={{ textAlign: 'center', color: 'var(--text3)', fontSize: 13 }}>No responses yet</div>
+                    ) : (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                        {responses.map((resp) => (
+                          <div key={String(resp._id)} style={{
+                            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                            padding: '8px 12px', background: 'var(--bg3)', borderRadius: 8, fontSize: 13,
+                          }}>
+                            <div>
+                              <strong>{resp.playerName}</strong>
+                              {resp.guestCount && resp.guestCount > 0 && (
+                                <span style={{ color: 'var(--text3)', marginLeft: 8 }}>+{resp.guestCount} guest{resp.guestCount > 1 ? 's' : ''}</span>
+                              )}
+                              {resp.note && (
+                                <div style={{ fontSize: 12, color: 'var(--text3)', marginTop: 2 }}>{resp.note}</div>
+                              )}
+                            </div>
+                            <span style={{
+                              padding: '4px 8px', borderRadius: 4, fontSize: 11, fontWeight: 600,
+                              background: resp.response === 'yes' ? 'rgba(34,197,94,.15)' : resp.response === 'maybe' ? 'rgba(245,158,11,.15)' : 'rgba(239,68,68,.15)',
+                              color: resp.response === 'yes' ? 'var(--success)' : resp.response === 'maybe' ? 'var(--accent)' : 'var(--danger)',
+                            }}>
+                              {resp.response.toUpperCase()}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </Card>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Create Poll Modal */}
+      {showCreateModal && (
+        <div
+          style={{
+            position: 'fixed', inset: 0, background: 'rgba(30,27,75,.45)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            zIndex: 1000, backdropFilter: 'blur(8px)',
+          }}
+          onClick={(e) => { if (e.target === e.currentTarget) setShowCreateModal(false); }}
+        >
+          <div style={{
+            background: 'var(--bg-card)', borderRadius: 'var(--r)',
+            padding: 32, width: '100%', maxWidth: 600,
+            boxShadow: '0 24px 80px rgba(124,58,237,.25)',
+            border: '1px solid var(--border)',
+            maxHeight: '90vh', overflowY: 'auto',
+          }}>
+            <CardTitle style={{ marginBottom: 20 }}>➕ Create Attendance Poll</CardTitle>
+
+            <form onSubmit={handleCreatePoll}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                <div>
+                  <label style={{ display: 'block', marginBottom: 6, fontSize: 13, fontWeight: 600 }}>Poll Title *</label>
+                  <input
+                    className="input"
+                    value={formData.pollTitle}
+                    onChange={(e) => setFormData({ ...formData, pollTitle: e.target.value })}
+                    placeholder="e.g. Friday Night Badminton"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', marginBottom: 6, fontSize: 13, fontWeight: 600 }}>Session Date *</label>
+                  <input
+                    className="input"
+                    type="date"
+                    value={formData.sessionDate}
+                    onChange={(e) => setFormData({ ...formData, sessionDate: e.target.value })}
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', marginBottom: 6, fontSize: 13, fontWeight: 600 }}>Session Time</label>
+                  <input
+                    className="input"
+                    value={formData.sessionTime}
+                    onChange={(e) => setFormData({ ...formData, sessionTime: e.target.value })}
+                    placeholder="e.g. 18:00-20:00"
+                  />
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', marginBottom: 6, fontSize: 13, fontWeight: 600 }}>Venue</label>
+                  <select
+                    className="input"
+                    value={formData.venueId}
+                    onChange={(e) => setFormData({ ...formData, venueId: e.target.value })}
+                  >
+                    <option value="">-- Select Venue --</option>
+                    {venues.map((v) => (
+                      <option key={String(v._id)} value={String(v._id)}>{v.name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', marginBottom: 6, fontSize: 13, fontWeight: 600 }}>RSVP Deadline *</label>
+                  <input
+                    className="input"
+                    type="datetime-local"
+                    value={formData.rsvpDeadline}
+                    onChange={(e) => setFormData({ ...formData, rsvpDeadline: e.target.value })}
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', marginBottom: 6, fontSize: 13, fontWeight: 600 }}>Description</label>
+                  <textarea
+                    className="input"
+                    value={formData.pollDescription}
+                    onChange={(e) => setFormData({ ...formData, pollDescription: e.target.value })}
+                    placeholder="Optional details about the session"
+                    rows={3}
+                  />
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', marginBottom: 6, fontSize: 13, fontWeight: 600 }}>Max Players (Optional)</label>
+                  <input
+                    className="input"
+                    type="number"
+                    value={formData.maxPlayers}
+                    onChange={(e) => setFormData({ ...formData, maxPlayers: e.target.value })}
+                    placeholder="Leave empty for no limit"
+                    min="1"
+                  />
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', marginBottom: 6, fontSize: 13, fontWeight: 600 }}>Target Players</label>
+                  <select
+                    className="input"
+                    value={formData.targetPlayers}
+                    onChange={(e) => setFormData({ ...formData, targetPlayers: e.target.value as any })}
+                  >
+                    <option value="all_active">All Active Players</option>
+                    <option value="pro_only">Pro Players Only</option>
+                    <option value="beg_only">Beginner Players Only</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', marginBottom: 6, fontSize: 13, fontWeight: 600 }}>Status</label>
+                  <select
+                    className="input"
+                    value={formData.status}
+                    onChange={(e) => setFormData({ ...formData, status: e.target.value as any })}
+                  >
+                    <option value="draft">Draft (not visible to players)</option>
+                    <option value="open">Open (players can RSVP)</option>
+                  </select>
+                </div>
+
+                {/* Automation Settings */}
+                <div style={{
+                  padding: 16,
+                  background: 'var(--bg3)',
+                  borderRadius: 8,
+                  border: '1px solid var(--border)',
+                }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 12, color: 'var(--primary)' }}>
+                    🤖 Automation Settings
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13 }}>
+                      <input
+                        type="checkbox"
+                        checked={formData.autoCreateTournament}
+                        onChange={(e) => setFormData({ ...formData, autoCreateTournament: e.target.checked })}
+                        style={{ width: 16, height: 16, cursor: 'pointer' }}
+                      />
+                      <span>Auto-create tournament draft when poll closes</span>
+                    </label>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13 }}>
+                      <input
+                        type="checkbox"
+                        checked={formData.autoCreatePayment}
+                        onChange={(e) => setFormData({ ...formData, autoCreatePayment: e.target.checked })}
+                        style={{ width: 16, height: 16, cursor: 'pointer' }}
+                      />
+                      <span>Auto-create payment session draft when poll closes</span>
+                    </label>
+                  </div>
+                  <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 10, fontStyle: 'italic' }}>
+                    ℹ️ Drafts will be created in the admin dashboard for review before finalizing
+                  </div>
+                </div>
+
+                {error && (
+                  <div style={{ padding: 12, background: 'rgba(239,68,68,.1)', border: '1px solid var(--danger)', borderRadius: 8, color: 'var(--danger)', fontSize: 13 }}>
+                    {error}
+                  </div>
+                )}
+
+                <div style={{ display: 'flex', gap: 12, marginTop: 8 }}>
+                  <Btn variant="secondary" full onClick={() => setShowCreateModal(false)} disabled={creating}>
+                    Cancel
+                  </Btn>
+                  <Btn variant="primary" full disabled={creating}>
+                    {creating ? 'Creating...' : 'Create Poll'}
+                  </Btn>
+                </div>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ════════════════════════════════════════════════════
    ROOT APP
 ════════════════════════════════════════════════════ */
 export default function TournamentApp() {
@@ -5292,13 +5803,14 @@ export default function TournamentApp() {
   }
 
   const headerBadge =
-    view === 'roster'   ? 'Roster'   :
-    view === 'history'  ? 'History'  :
-    view === 'rankings' ? 'Rankings' :
-    view === 'payment'  ? 'Payment'  :
-    view === 'bets'     ? 'Bets'     :
-    view === 'champion' ? 'Finished' :
-    view === 'setup'    ? 'Setup'    :
+    view === 'roster'     ? 'Roster'     :
+    view === 'history'    ? 'History'    :
+    view === 'rankings'   ? 'Rankings'   :
+    view === 'payment'    ? 'Payment'    :
+    view === 'bets'       ? 'Bets'       :
+    view === 'attendance' ? 'Attendance' :
+    view === 'champion'   ? 'Finished'   :
+    view === 'setup'      ? 'Setup'      :
     (getCurrentRound(tourney)?.name ?? 'Finished');
 
   if (appLoading) {
@@ -5312,10 +5824,11 @@ export default function TournamentApp() {
 
   // Nav items definition
   const navPublic = [
-    { id: 'rankings', icon: '🏅', label: 'Rankings' },
-    { id: 'history',  icon: '📜', label: 'History'  },
-    { id: 'bets',     icon: '🎲', label: 'Bets'     },
-    { id: 'payment',  icon: '💰', label: 'Payments'  },
+    { id: 'rankings',    icon: '🏅', label: 'Rankings'   },
+    { id: 'history',     icon: '📜', label: 'History'    },
+    { id: 'bets',        icon: '🎲', label: 'Bets'       },
+    { id: 'payment',     icon: '💰', label: 'Payments'   },
+    { id: 'attendance',  icon: '✋', label: 'Attendance'  },
   ];
   const navAdmin = [
     { id: 'roster',     icon: '👥', label: 'Players'    },
@@ -5516,6 +6029,9 @@ export default function TournamentApp() {
           )}
           {view === 'pricing' && (
             <PricingRulesScreen onBack={() => setView('payment')} />
+          )}
+          {view === 'attendance' && (
+            <AttendanceScreen onBack={() => setView(tourney.rounds.length > 0 ? (tourney.champion ? 'champion' : 'tournament') : 'roster')} />
           )}
         </main>
       </div>

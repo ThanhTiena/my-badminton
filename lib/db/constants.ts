@@ -17,6 +17,10 @@ export const COLLECTIONS = {
   // NEW Sprint 1: Multi-venue and pricing
   VENUES:            'venues',
   PRICING_RULES:     'pricing_rules',
+
+  // NEW Sprint 2: Attendance polling system
+  POLLS:             'session_polls',
+  POLL_RESPONSES:    'poll_responses',
 } as const;
 
 export type CollectionName = typeof COLLECTIONS[keyof typeof COLLECTIONS];
