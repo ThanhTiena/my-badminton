@@ -103,6 +103,66 @@ body {
 .anim-fall    { animation: fall linear forwards; }
 
 /* ════════════════════════════════════════════════════
+   KEYBOARD NAVIGATION — Focus indicators
+════════════════════════════════════════════════════ */
+/* Focus indicators for keyboard navigation */
+*:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+button:focus-visible,
+.btn:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 4px rgba(124, 58, 237, 0.2);
+}
+
+input:focus-visible,
+.input:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 0;
+  box-shadow: 0 0 0 4px rgba(124, 58, 237, 0.12);
+}
+
+/* Don't show focus on mouse clicks */
+*:focus:not(:focus-visible) {
+  outline: none;
+}
+
+/* ════════════════════════════════════════════════════
+   SKELETON LOADER
+════════════════════════════════════════════════════ */
+.skeleton {
+  background: var(--bg-soft);
+  background-image: linear-gradient(
+    90deg,
+    var(--bg-soft) 0%,
+    rgba(124, 58, 237, 0.08) 50%,
+    var(--bg-soft) 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s ease-in-out infinite;
+}
+
+.skeleton-shimmer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.3) 50%,
+    transparent 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s ease-in-out infinite;
+}
+
+/* ════════════════════════════════════════════════════
    APP SHELL — Sidebar + Content layout
 ════════════════════════════════════════════════════ */
 .app-shell {

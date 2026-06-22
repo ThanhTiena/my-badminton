@@ -10,6 +10,7 @@ import {
 } from '@/lib/tournament';
 import type { PlayerDoc, TournamentHistoryDoc, CourtSessionDoc, PaymentConfigDoc, ImportRow, BetDoc } from '@/lib/models';
 import { parseImportText, formatVND } from '@/lib/payment';
+import { Skeleton, SkeletonCard } from '@/components/ui/SkeletonLoader';
 
 type AppView = 'roster' | 'setup' | 'tournament' | 'champion' | 'history' | 'rankings' | 'payment' | 'bets' | 'analytics';
 
@@ -1290,7 +1291,21 @@ function HistoryScreen({ onBack }: { onBack: () => void }) {
       <p className="page-sub">{total} tournament{total !== 1 ? 's' : ''} on record.</p>
 
       {loading ? (
-        <EmptyState icon="⏳" text="Loading history…" />
+        <div className="t-history-list">
+          {[...Array(5)].map((_, i) => (
+            <SkeletonCard key={i}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 12 }}>
+                <Skeleton variant="circular" width={48} height={48} />
+                <div style={{ flex: 1 }}>
+                  <Skeleton width="40%" height={18} style={{ marginBottom: 6 }} />
+                  <Skeleton width="60%" height={14} />
+                </div>
+                <Skeleton width={80} height={14} />
+              </div>
+              <Skeleton width="100%" height={100} />
+            </SkeletonCard>
+          ))}
+        </div>
       ) : history.length === 0 ? (
         <EmptyState icon="📋" text="No tournaments recorded yet." />
       ) : (
@@ -1734,7 +1749,36 @@ function RankingsScreen({ onBack, onOpenProfile }: { onBack: () => void; onOpenP
       </div>
 
       {loading ? (
-        <EmptyState icon="⏳" text="Loading rankings…" />
+        <>
+          {/* Skeleton: Podium */}
+          <div className="podium-wrap">
+            {[1, 2, 3].map(i => (
+              <div key={i} className={`podium-card podium-${i === 2 ? '1st' : i === 1 ? '2nd' : '3rd'}`} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12 }}>
+                <Skeleton variant="circular" width={56} height={56} />
+                <Skeleton width="60%" height={14} />
+                <Skeleton width="80%" height={18} />
+                <Skeleton width="50%" height={16} />
+              </div>
+            ))}
+          </div>
+
+          {/* Skeleton: Table */}
+          <Card>
+            <CardTitle>Loading rankings...</CardTitle>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              {[...Array(10)].map((_, i) => (
+                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+                  <Skeleton variant="circular" width={40} height={40} />
+                  <div style={{ flex: 1 }}>
+                    <Skeleton width="60%" height={16} style={{ marginBottom: 6 }} />
+                    <Skeleton width="40%" height={12} />
+                  </div>
+                  <Skeleton width={60} height={24} />
+                </div>
+              ))}
+            </div>
+          </Card>
+        </>
       ) : filtered.length === 0 ? (
         <EmptyState icon="🏅" text="No players yet. Complete a tournament to generate rankings." />
       ) : (
@@ -3021,7 +3065,14 @@ function PaymentScreen({ onBack, tournamentPlayers = [], onOpenProfile }: { onBa
             <Card style={{ height: 'fit-content' }}>
               <CardTitle>🔴 Outstanding Debt</CardTitle>
               {debtLoading ? (
-                <div style={{ fontSize: 13, color: 'var(--text3)' }}>Loading debts…</div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {[...Array(5)].map((_, i) => (
+                    <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <Skeleton width="50%" height={16} />
+                      <Skeleton width="30%" height={20} />
+                    </div>
+                  ))}
+                </div>
               ) : outstandingDebts.length === 0 ? (
                 <div style={{ fontSize: 13, color: 'var(--success)', fontWeight: 600 }}>🎉 All debts settled!</div>
               ) : (
@@ -3043,7 +3094,29 @@ function PaymentScreen({ onBack, tournamentPlayers = [], onOpenProfile }: { onBa
           </div>
 
           {summLoading ? (
-            <EmptyState icon="⏳" text="Loading…" />
+            <Card>
+              <CardTitle>Loading payment data...</CardTitle>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                {/* Table header skeleton */}
+                <div style={{ display: 'flex', gap: 12, borderBottom: '1px solid var(--border)', paddingBottom: 8 }}>
+                  <Skeleton width={120} height={16} />
+                  <Skeleton width={80} height={16} />
+                  <Skeleton width={80} height={16} />
+                  <Skeleton width={80} height={16} />
+                  <Skeleton width={100} height={16} />
+                </div>
+                {/* Table rows skeleton */}
+                {[...Array(8)].map((_, i) => (
+                  <div key={i} style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+                    <Skeleton width={120} height={20} />
+                    <Skeleton width={80} height={20} />
+                    <Skeleton width={80} height={20} />
+                    <Skeleton width={80} height={20} />
+                    <Skeleton width={100} height={24} />
+                  </div>
+                ))}
+              </div>
+            </Card>
           ) : !summary || summary.sessions.length === 0 ? (
             <EmptyState icon="📋" text={`No sessions found for ${summaryRef.replace('W', 'Week ')}.`} />
           ) : (() => {
@@ -4237,6 +4310,56 @@ export default function TournamentApp() {
     }).catch(() => setAuthChecked(true));
   }, []);
 
+  // ── Keyboard Navigation: Esc key closes Login modal ──
+  useEffect(() => {
+    if (!showLogin) return;
+
+    function handleEsc(e: KeyboardEvent) {
+      if (e.key === 'Escape') {
+        setShowLogin(false);
+        setLoginError('');
+        setLoginUser('');
+        setLoginPass('');
+      }
+    }
+
+    window.addEventListener('keydown', handleEsc);
+    return () => window.removeEventListener('keydown', handleEsc);
+  }, [showLogin]);
+
+  // ── Keyboard Navigation: Esc key closes Change Password modal ──
+  useEffect(() => {
+    if (!showChangePw) return;
+
+    function handleEsc(e: KeyboardEvent) {
+      if (e.key === 'Escape') {
+        setShowChangePw(false);
+        setCpCurrent('');
+        setCpNew('');
+        setCpConfirm('');
+        setCpError('');
+        setCpSuccess('');
+      }
+    }
+
+    window.addEventListener('keydown', handleEsc);
+    return () => window.removeEventListener('keydown', handleEsc);
+  }, [showChangePw]);
+
+  // ── Keyboard Navigation: Esc key closes Mobile menu ──
+  useEffect(() => {
+    if (!mobileMenuOpen) return;
+
+    function handleEsc(e: KeyboardEvent) {
+      if (e.key === 'Escape') {
+        setMobileMenuOpen(false);
+      }
+    }
+
+    window.addEventListener('keydown', handleEsc);
+    return () => window.removeEventListener('keydown', handleEsc);
+  }, [mobileMenuOpen]);
+
   async function handleLogin() {
     setLoginLoading(true);
     setLoginError('');
@@ -4892,9 +5015,9 @@ export default function TournamentApp() {
           }}>
             <h3 id="change-password-title" style={{ fontSize: 18, fontWeight: 800, marginBottom: 20, color: 'var(--text)' }}>🔑 Change Password</h3>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              <input id="cp-current" className="input" type="password" placeholder="Current password" value={cpCurrent} onChange={e => setCpCurrent(e.target.value)} autoComplete="current-password" aria-label="Current password" />
-              <input id="cp-new" className="input" type="password" placeholder="New password (min 8 chars)" value={cpNew} onChange={e => setCpNew(e.target.value)} autoComplete="new-password" aria-label="New password (minimum 8 characters)" />
-              <input id="cp-confirm" className="input" type="password" placeholder="Confirm new password" value={cpConfirm} onChange={e => setCpConfirm(e.target.value)} autoComplete="new-password" aria-label="Confirm new password" />
+              <input id="cp-current" className="input" type="password" placeholder="Current password" value={cpCurrent} onChange={e => setCpCurrent(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleChangePw()} autoComplete="current-password" aria-label="Current password" />
+              <input id="cp-new" className="input" type="password" placeholder="New password (min 8 chars)" value={cpNew} onChange={e => setCpNew(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleChangePw()} autoComplete="new-password" aria-label="New password (minimum 8 characters)" />
+              <input id="cp-confirm" className="input" type="password" placeholder="Confirm new password" value={cpConfirm} onChange={e => setCpConfirm(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleChangePw()} autoComplete="new-password" aria-label="Confirm new password" />
               {cpError   && <div className="alert alert-danger">{cpError}</div>}
               {cpSuccess && <div className="alert alert-success">{cpSuccess}</div>}
               <button className="btn btn-primary btn-full" onClick={handleChangePw}>💾 Update Password</button>
