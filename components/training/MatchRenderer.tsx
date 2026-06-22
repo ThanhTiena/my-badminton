@@ -22,9 +22,23 @@ interface ShuttlecockState {
   visible: boolean;
 }
 
+interface TrajectoryData {
+  startX: number;
+  startY: number;
+  startZ: number;
+  endX: number;
+  endY: number;
+  endZ: number;
+  peakHeight: number;
+  durationMs: number;
+  spinRotations?: number;
+}
+
 interface MatchRendererProps {
   players: PlayerCharacter[];
   shuttlecock?: ShuttlecockState;
+  trajectory?: TrajectoryData | null;
+  onTrajectoryComplete?: () => void;
   width?: number;
   height?: number;
 }
@@ -32,6 +46,8 @@ interface MatchRendererProps {
 export default function MatchRenderer({
   players,
   shuttlecock,
+  trajectory,
+  onTrajectoryComplete,
   width = 800,
   height = 600,
 }: MatchRendererProps) {
@@ -45,6 +61,7 @@ export default function MatchRenderer({
   const playersGroupRef = useRef<any>(null);
   const shuttlecockRef = useRef<any>(null);
   const controlsRef = useRef<any>(null);
+  const trajectoryAnimationRef = useRef<number | null>(null);
 
   // Load Three.js from CDN
   useEffect(() => {
@@ -340,6 +357,74 @@ export default function MatchRenderer({
       shuttlecock.z
     );
   }, [shuttlecock, threeLoaded]);
+
+  // Animate shuttlecock along trajectory
+  useEffect(() => {
+    if (!threeLoaded || !shuttlecockRef.current || !trajectory) return;
+
+    // Cancel any existing animation
+    if (trajectoryAnimationRef.current) {
+      cancelAnimationFrame(trajectoryAnimationRef.current);
+    }
+
+    const startTime = Date.now();
+    const {
+      startX,
+      startY,
+      startZ,
+      endX,
+      endY,
+      endZ,
+      peakHeight,
+      durationMs,
+      spinRotations = 2,
+    } = trajectory;
+
+    const animateTrajectory = () => {
+      const elapsed = Date.now() - startTime;
+      const progress = Math.min(elapsed / durationMs, 1);
+
+      if (progress >= 1) {
+        // Animation complete
+        shuttlecockRef.current.position.set(endX, endY, endZ);
+        shuttlecockRef.current.visible = true;
+        if (onTrajectoryComplete) {
+          onTrajectoryComplete();
+        }
+        return;
+      }
+
+      // Parabolic trajectory calculation
+      // X and Z: Linear interpolation
+      const x = startX + (endX - startX) * progress;
+      const z = startZ + (endZ - startZ) * progress;
+
+      // Y: Parabolic arc (quadratic bezier curve)
+      // Peak height reached at progress = 0.5
+      const baseY = startY + (endY - startY) * progress;
+      const arcHeight = 4 * peakHeight * progress * (1 - progress);
+      const y = baseY + arcHeight;
+
+      // Update shuttlecock position
+      shuttlecockRef.current.position.set(x, y, z);
+      shuttlecockRef.current.visible = true;
+
+      // Add spin rotation
+      shuttlecockRef.current.rotation.z = progress * spinRotations * Math.PI * 2;
+
+      // Continue animation
+      trajectoryAnimationRef.current = requestAnimationFrame(animateTrajectory);
+    };
+
+    animateTrajectory();
+
+    // Cleanup
+    return () => {
+      if (trajectoryAnimationRef.current) {
+        cancelAnimationFrame(trajectoryAnimationRef.current);
+      }
+    };
+  }, [trajectory, threeLoaded, onTrajectoryComplete]);
 
   if (error) {
     return (

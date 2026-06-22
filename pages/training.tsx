@@ -539,6 +539,37 @@ export default function TrainingPage() {
     }
   };
 
+  const savePose = async () => {
+    const poseName = prompt('Enter a name for this pose:', 'Custom Pose');
+    if (!poseName) return;
+
+    const poseDescription = prompt('Enter a description (optional):', '');
+
+    // Save to user progress (custom techniques)
+    try {
+      const res = await fetch('/api/progress/custom-pose', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: poseName,
+          description: poseDescription || '',
+          joints: customJoints,
+        }),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        alert(`✅ Pose "${poseName}" saved successfully!\n\nYou now have ${data.totalCustomPoses} custom pose(s).`);
+      } else {
+        const error = await res.json();
+        alert(`❌ Failed to save pose: ${error.error}`);
+      }
+    } catch (error) {
+      console.error('Failed to save pose:', error);
+      alert('Failed to save pose. Please try again.');
+    }
+  };
+
   const toggleFavorite = async (techniqueId: string) => {
     const isFavorited = favoriteIds.includes(techniqueId);
     setFavoritesLoading(true);
@@ -882,21 +913,38 @@ export default function TrainingPage() {
                     </>
                   )}
                   {editMode && (
-                    <button
-                      onClick={resetPose}
-                      style={{
-                        background: '#ef4444',
-                        color: '#fff',
-                        border: 'none',
-                        borderRadius: 8,
-                        padding: '10px 20px',
-                        fontSize: 13,
-                        fontWeight: 600,
-                        cursor: 'pointer',
-                      }}
-                    >
-                      🔄 Reset
-                    </button>
+                    <>
+                      <button
+                        onClick={resetPose}
+                        style={{
+                          background: '#ef4444',
+                          color: '#fff',
+                          border: 'none',
+                          borderRadius: 8,
+                          padding: '10px 20px',
+                          fontSize: 13,
+                          fontWeight: 600,
+                          cursor: 'pointer',
+                        }}
+                      >
+                        🔄 Reset
+                      </button>
+                      <button
+                        onClick={savePose}
+                        style={{
+                          background: '#22c55e',
+                          color: '#fff',
+                          border: 'none',
+                          borderRadius: 8,
+                          padding: '10px 20px',
+                          fontSize: 13,
+                          fontWeight: 600,
+                          cursor: 'pointer',
+                        }}
+                      >
+                        💾 Save Pose
+                      </button>
+                    </>
                   )}
                 </div>
               </div>
