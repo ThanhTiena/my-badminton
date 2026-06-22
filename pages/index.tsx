@@ -45,8 +45,8 @@ function Btn({
   );
 }
 
-function Card({ children, className = '', style }: { children: React.ReactNode; className?: string; style?: React.CSSProperties }) {
-  return <div className={`card ${className}`} style={style}>{children}</div>;
+function Card({ children, className = '', style, ...props }: { children: React.ReactNode; className?: string; style?: React.CSSProperties; [key: string]: any }) {
+  return <div className={`card ${className}`} style={style} {...props}>{children}</div>;
 }
 
 function CardTitle({ children, style }: { children: React.ReactNode; style?: React.CSSProperties }) {
@@ -949,7 +949,52 @@ function TournamentScreen({
       }
     }, 50);
 
+    // Focus trap handler
+    function handleTab(e: KeyboardEvent) {
+      if (e.key !== 'Tab') return;
+
+      // Get the panel container first to scope focusable elements
+      const panelContainer = document.querySelector('[data-add-player-panel="true"]');
+      if (!panelContainer) return;
+
+      // Find all focusable elements within the panel only
+      const focusableSelector = `
+        a[href]:not([disabled]),
+        button:not([disabled]),
+        textarea:not([disabled]),
+        input:not([disabled]):not([type="hidden"]),
+        select:not([disabled]),
+        [tabindex]:not([tabindex="-1"]):not([disabled])
+      `.trim();
+
+      const focusableElements = Array.from(
+        panelContainer.querySelectorAll(focusableSelector)
+      ).filter(el => {
+        const htmlEl = el as HTMLElement;
+        return htmlEl.offsetParent !== null; // checks if element is visible
+      }) as HTMLElement[];
+
+      if (focusableElements.length === 0) return;
+
+      const firstElement = focusableElements[0];
+      const lastElement = focusableElements[focusableElements.length - 1];
+
+      // Shift+Tab on first element: go to last element
+      if (e.shiftKey && document.activeElement === firstElement) {
+        e.preventDefault();
+        lastElement.focus();
+      }
+      // Tab on last element: go to first element
+      else if (!e.shiftKey && document.activeElement === lastElement) {
+        e.preventDefault();
+        firstElement.focus();
+      }
+    }
+
+    document.addEventListener('keydown', handleTab);
+
     return () => {
+      document.removeEventListener('keydown', handleTab);
       // Restore focus to the trigger element when panel closes
       if (triggerElement && triggerElement.focus) {
         setTimeout(() => triggerElement.focus(), 50);
@@ -1026,7 +1071,7 @@ function TournamentScreen({
 
       {/* Add-player panel — only when no matches played yet */}
       {showAddPlayer && canAddPlayer && (
-        <Card style={{ marginBottom: 16 }}>
+        <Card style={{ marginBottom: 16 }} className="add-player-panel" data-add-player-panel="true">
           <CardTitle>➕ Add Player to Tournament</CardTitle>
           {addablePlayers.length === 0 ? (
             <p style={{ fontSize: 13, color: 'var(--text3)' }}>All roster players are already in this tournament.</p>
@@ -4369,13 +4414,25 @@ export default function TournamentApp() {
     function handleTab(e: KeyboardEvent) {
       if (e.key !== 'Tab') return;
 
-      // Get all focusable elements within the login modal
+      // Get the modal container first to scope focusable elements
+      const modalContainer = document.querySelector('[role="dialog"][aria-labelledby="login-modal-title"]');
+      if (!modalContainer) return;
+
+      // Find all focusable elements within the modal only
+      const focusableSelector = `
+        a[href]:not([disabled]),
+        button:not([disabled]),
+        textarea:not([disabled]),
+        input:not([disabled]):not([type="hidden"]),
+        select:not([disabled]),
+        [tabindex]:not([tabindex="-1"]):not([disabled])
+      `.trim();
+
       const focusableElements = Array.from(
-        document.querySelectorAll('#login-username, #login-password, #btn-login-submit, .btn-ghost')
+        modalContainer.querySelectorAll(focusableSelector)
       ).filter(el => {
-        // Only include elements that are visible and within the login modal
-        const parent = el.closest('[role="dialog"]');
-        return parent && parent.getAttribute('aria-labelledby') === 'login-modal-title';
+        const htmlEl = el as HTMLElement;
+        return htmlEl.offsetParent !== null; // checks if element is visible
       }) as HTMLElement[];
 
       if (focusableElements.length === 0) return;
@@ -4442,13 +4499,25 @@ export default function TournamentApp() {
     function handleTab(e: KeyboardEvent) {
       if (e.key !== 'Tab') return;
 
-      // Get all focusable elements within the change password modal
+      // Get the modal container first to scope focusable elements
+      const modalContainer = document.querySelector('[role="dialog"][aria-labelledby="change-password-title"]');
+      if (!modalContainer) return;
+
+      // Find all focusable elements within the modal only
+      const focusableSelector = `
+        a[href]:not([disabled]),
+        button:not([disabled]),
+        textarea:not([disabled]),
+        input:not([disabled]):not([type="hidden"]),
+        select:not([disabled]),
+        [tabindex]:not([tabindex="-1"]):not([disabled])
+      `.trim();
+
       const focusableElements = Array.from(
-        document.querySelectorAll('#cp-current, #cp-new, #cp-confirm, .btn-primary, .btn-ghost')
+        modalContainer.querySelectorAll(focusableSelector)
       ).filter(el => {
-        // Only include elements that are visible and within the change password modal
-        const parent = el.closest('[role="dialog"]');
-        return parent && parent.getAttribute('aria-labelledby') === 'change-password-title';
+        const htmlEl = el as HTMLElement;
+        return htmlEl.offsetParent !== null; // checks if element is visible
       }) as HTMLElement[];
 
       if (focusableElements.length === 0) return;
