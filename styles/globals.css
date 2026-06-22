@@ -1322,22 +1322,62 @@ input:focus-visible,
   color: #fff;
   box-shadow: 0 12px 40px rgba(124,58,237,.4), 0 0 0 2px rgba(255,255,255,.2) inset;
   order: 2;
-  min-height: 240px;
+  min-height: 280px;
   border: 2px solid rgba(255,255,255,.2);
+  transform: scale(1.15);
+  z-index: 10;
 }
 .podium-1st:hover {
   box-shadow: 0 16px 48px rgba(124,58,237,.5), 0 0 0 2px rgba(255,255,255,.3) inset;
+  transform: translateY(-6px) scale(1.17);
+}
+.podium-1st .podium-crown {
+  font-size: 48px;
+}
+.podium-1st .podium-avatar {
+  width: 80px;
+  height: 80px;
+  font-size: 28px;
+}
+.podium-1st .podium-rank {
+  font-size: 22px;
+}
+.podium-1st .podium-name {
+  font-size: 18px;
+}
+.podium-1st .podium-score {
+  font-size: 28px;
 }
 .podium-2nd {
   background: linear-gradient(135deg, #6B7280, #9CA3AF);
   color: #fff;
   box-shadow: 0 10px 32px rgba(107,114,128,.4), 0 0 0 2px rgba(255,255,255,.15) inset;
   order: 1;
-  min-height: 200px;
+  min-height: 220px;
   border: 2px solid rgba(255,255,255,.2);
+  transform: scale(1.0);
+  z-index: 5;
 }
 .podium-2nd:hover {
   box-shadow: 0 12px 36px rgba(107,114,128,.5), 0 0 0 2px rgba(255,255,255,.25) inset;
+  transform: translateY(-6px) scale(1.02);
+}
+.podium-2nd .podium-crown {
+  font-size: 40px;
+}
+.podium-2nd .podium-avatar {
+  width: 68px;
+  height: 68px;
+  font-size: 24px;
+}
+.podium-2nd .podium-rank {
+  font-size: 18px;
+}
+.podium-2nd .podium-name {
+  font-size: 16px;
+}
+.podium-2nd .podium-score {
+  font-size: 24px;
 }
 .podium-3rd {
   background: linear-gradient(135deg, #92400E, #D97706);
@@ -1346,9 +1386,12 @@ input:focus-visible,
   order: 3;
   min-height: 180px;
   border: 2px solid rgba(255,255,255,.2);
+  transform: scale(0.9);
+  z-index: 1;
 }
 .podium-3rd:hover {
   box-shadow: 0 12px 36px rgba(217,119,6,.5), 0 0 0 2px rgba(255,255,255,.25) inset;
+  transform: translateY(-6px) scale(0.92);
 }
 
 .podium-crown {
@@ -1408,13 +1451,41 @@ input:focus-visible,
     max-width: 160px;
     padding: 18px 12px;
   }
-  .podium-1st { min-height: 200px; }
-  .podium-2nd { min-height: 170px; }
-  .podium-3rd { min-height: 150px; }
-  .podium-crown { font-size: 28px; }
-  .podium-avatar { width: 52px; height: 52px; font-size: 18px; }
-  .podium-name { font-size: 14px; }
-  .podium-score { font-size: 18px; }
+  .podium-1st {
+    min-height: 220px;
+    transform: scale(1.1);
+  }
+  .podium-1st:hover {
+    transform: translateY(-6px) scale(1.12);
+  }
+  .podium-1st .podium-crown { font-size: 36px; }
+  .podium-1st .podium-avatar { width: 60px; height: 60px; font-size: 22px; }
+  .podium-1st .podium-name { font-size: 15px; }
+  .podium-1st .podium-score { font-size: 22px; }
+
+  .podium-2nd {
+    min-height: 190px;
+    transform: scale(1.0);
+  }
+  .podium-2nd:hover {
+    transform: translateY(-6px) scale(1.02);
+  }
+  .podium-2nd .podium-crown { font-size: 32px; }
+  .podium-2nd .podium-avatar { width: 56px; height: 56px; font-size: 20px; }
+  .podium-2nd .podium-name { font-size: 14px; }
+  .podium-2nd .podium-score { font-size: 20px; }
+
+  .podium-3rd {
+    min-height: 160px;
+    transform: scale(0.9);
+  }
+  .podium-3rd:hover {
+    transform: translateY(-6px) scale(0.92);
+  }
+  .podium-3rd .podium-crown { font-size: 28px; }
+  .podium-3rd .podium-avatar { width: 52px; height: 52px; font-size: 18px; }
+  .podium-3rd .podium-name { font-size: 13px; }
+  .podium-3rd .podium-score { font-size: 18px; }
 }
 
 /* ════════════════════════════════════════════════════
