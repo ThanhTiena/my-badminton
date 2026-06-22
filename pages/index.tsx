@@ -13,7 +13,7 @@ import { calculateCourtSuggestion } from '@/lib/polls';
 import { parseImportText, formatVND } from '@/lib/payment';
 import { Skeleton, SkeletonCard } from '@/components/ui/SkeletonLoader';
 
-type AppView = 'roster' | 'setup' | 'tournament' | 'champion' | 'history' | 'rankings' | 'payment' | 'bets' | 'analytics' | 'venues' | 'pricing' | 'attendance';
+type AppView = 'roster' | 'setup' | 'tournament' | 'champion' | 'history' | 'rankings' | 'payment' | 'bets' | 'analytics' | 'venues' | 'pricing' | 'attendance' | 'training';
 
 const INITIAL_TOURNEY: TournamentState = {
   pros: [], beginners: [], teams: [],
@@ -6109,6 +6109,7 @@ export default function TournamentApp() {
     view === 'payment'    ? 'Payment'    :
     view === 'bets'       ? 'Bets'       :
     view === 'attendance' ? 'Attendance' :
+    view === 'training'   ? 'Training'   :
     view === 'champion'   ? 'Finished'   :
     view === 'setup'      ? 'Setup'      :
     (getCurrentRound(tourney)?.name ?? 'Finished');
@@ -6129,6 +6130,7 @@ export default function TournamentApp() {
     { id: 'bets',        icon: '🎲', label: 'Bets'       },
     { id: 'payment',     icon: '💰', label: 'Payments'   },
     { id: 'attendance',  icon: '✋', label: 'Attendance'  },
+    { id: 'training',    icon: '🏸', label: 'Training'   },
   ];
   const navAdmin = [
     { id: 'roster',     icon: '👥', label: 'Players'    },
@@ -6332,6 +6334,26 @@ export default function TournamentApp() {
           )}
           {view === 'attendance' && (
             <AttendanceScreen onBack={() => setView(tourney.rounds.length > 0 ? (tourney.champion ? 'champion' : 'tournament') : 'roster')} />
+          )}
+          {view === 'training' && (
+            <div className="anim-fade">
+              <button className="back-btn" onClick={() => setView(tourney.rounds.length > 0 ? (tourney.champion ? 'champion' : 'tournament') : 'roster')}>← Back</button>
+              <p className="page-title">🏸 3D Training Lab</p>
+              <p className="page-sub">Learn professional techniques with interactive 3D demonstrations</p>
+              <Card style={{ marginTop: 20 }}>
+                <CardTitle>Opening Training Lab...</CardTitle>
+                <p style={{ fontSize: 13, color: 'var(--text2)', marginBottom: 16 }}>
+                  The 3D Training Lab is loading in a new window with full-screen interactive experience.
+                </p>
+                <Btn variant="primary" onClick={() => {
+                  if (typeof window !== 'undefined') {
+                    window.open('/training', '_blank');
+                  }
+                }}>
+                  🚀 Open Training Lab
+                </Btn>
+              </Card>
+            </div>
           )}
         </main>
       </div>
