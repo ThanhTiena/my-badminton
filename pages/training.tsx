@@ -1,6 +1,28 @@
 import { useState, useRef, useEffect } from 'react';
 import Head from 'next/head';
+import dynamic from 'next/dynamic';
 import type { TechniqueDoc } from '@/lib/models';
+
+// Dynamically import ThreeRenderer to avoid SSR issues
+const ThreeRenderer = dynamic(() => import('@/components/training/ThreeRenderer'), {
+  ssr: false,
+  loading: () => (
+    <div style={{
+      width: '100%',
+      height: 500,
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      background: 'linear-gradient(180deg, rgba(59,130,246,.1) 0%, rgba(124,58,237,.1) 100%)',
+      borderRadius: 12,
+    }}>
+      <div style={{ textAlign: 'center' }}>
+        <div style={{ fontSize: 48, marginBottom: 12 }}>🔄</div>
+        <div style={{ fontSize: 14, color: 'rgba(255,255,255,.8)' }}>Loading 3D Renderer...</div>
+      </div>
+    </div>
+  ),
+});
 
 /* ════════════════════════════════════════════════════
    TYPES & CONSTANTS
@@ -202,6 +224,7 @@ export default function TrainingPage() {
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [favoriteIds, setFavoriteIds] = useState<string[]>([]);
   const [favoritesLoading, setFavoritesLoading] = useState(false);
+  const [use3D, setUse3D] = useState(true); // Default to 3D renderer
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const animationRef = useRef<number | null>(null);
@@ -268,8 +291,10 @@ export default function TrainingPage() {
   }, [selectedTechnique, editMode]);
 
   useEffect(() => {
-    drawCharacter();
-  }, [currentJoints, selectedJoint]);
+    if (!use3D) {
+      drawCharacter();
+    }
+  }, [currentJoints, selectedJoint, use3D]);
 
   const drawCharacter = () => {
     const canvas = canvasRef.current;
@@ -670,6 +695,22 @@ export default function TrainingPage() {
                   </h2>
                   <div style={{ display: 'flex', gap: 8 }}>
                     <button
+                      onClick={() => setUse3D(!use3D)}
+                      style={{
+                        background: use3D ? 'rgba(124,58,237,.3)' : 'rgba(255,255,255,.1)',
+                        color: '#fff',
+                        border: use3D ? '1px solid #7c3aed' : '1px solid rgba(255,255,255,.2)',
+                        borderRadius: 8,
+                        padding: '8px 16px',
+                        fontSize: 13,
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                      }}
+                      title={use3D ? 'Switch to 2D Canvas' : 'Switch to 3D WebGL'}
+                    >
+                      {use3D ? '🎮 3D' : '🖼️ 2D'}
+                    </button>
+                    <button
                       onClick={() => setEditMode(!editMode)}
                       style={{
                         background: editMode ? '#f59e0b' : 'rgba(255,255,255,.1)',
@@ -691,24 +732,35 @@ export default function TrainingPage() {
                   {selectedTechnique?.poses[currentPoseIndex]?.description}
                 </p>
 
-                {/* Canvas */}
+                {/* 3D/2D Renderer */}
                 <div style={{ position: 'relative' }}>
-                  <canvas
-                    ref={canvasRef}
-                    width={600}
-                    height={500}
-                    onClick={handleCanvasClick}
-                    onMouseMove={handleCanvasMouseMove}
-                    onMouseUp={() => setSelectedJoint(null)}
-                    style={{
-                      width: '100%',
-                      background: 'linear-gradient(180deg, rgba(59,130,246,.1) 0%, rgba(124,58,237,.1) 100%)',
-                      borderRadius: 12,
-                      cursor: editMode ? 'crosshair' : 'default',
-                    }}
-                  />
+                  {use3D ? (
+                    <ThreeRenderer
+                      joints={currentJoints}
+                      editMode={editMode}
+                      selectedJoint={selectedJoint}
+                      onJointSelect={setSelectedJoint}
+                      width={600}
+                      height={500}
+                    />
+                  ) : (
+                    <canvas
+                      ref={canvasRef}
+                      width={600}
+                      height={500}
+                      onClick={handleCanvasClick}
+                      onMouseMove={handleCanvasMouseMove}
+                      onMouseUp={() => setSelectedJoint(null)}
+                      style={{
+                        width: '100%',
+                        background: 'linear-gradient(180deg, rgba(59,130,246,.1) 0%, rgba(124,58,237,.1) 100%)',
+                        borderRadius: 12,
+                        cursor: editMode ? 'crosshair' : 'default',
+                      }}
+                    />
+                  )}
 
-                  {editMode && selectedJoint && (
+                  {editMode && selectedJoint && !use3D && (
                     <div style={{
                       position: 'absolute',
                       top: 10,
