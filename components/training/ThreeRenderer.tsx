@@ -82,7 +82,8 @@ export default function ThreeRenderer({
         0.1,
         1000
       );
-      camera.position.set(0, 0, 10);
+      camera.position.set(0, 3, 12); // Higher and further back to see court
+      camera.lookAt(0, 0, 0);
       cameraRef.current = camera;
 
       // Create renderer
@@ -100,10 +101,87 @@ export default function ThreeRenderer({
       directionalLight.position.set(10, 10, 10);
       scene.add(directionalLight);
 
-      // Add grid helper
-      const gridHelper = new THREE.GridHelper(20, 20, 0x444444, 0x222222);
-      gridHelper.rotation.x = Math.PI / 2;
-      scene.add(gridHelper);
+      // Add badminton court
+      // Court dimensions: 13.4m × 6.1m (doubles)
+      // Scale: 1 unit = 1 meter
+      const courtGroup = new THREE.Group();
+
+      // Court floor (green surface)
+      const courtGeometry = new THREE.PlaneGeometry(6.1, 13.4);
+      const courtMaterial = new THREE.MeshPhongMaterial({
+        color: 0x2d6b3f,
+        side: THREE.DoubleSide,
+      });
+      const courtFloor = new THREE.Mesh(courtGeometry, courtMaterial);
+      courtFloor.rotation.x = -Math.PI / 2;
+      courtFloor.position.y = -5;
+      courtGroup.add(courtFloor);
+
+      // White court lines
+      const lineMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff });
+
+      // Outer boundary (doubles)
+      const outerBoundary = new THREE.EdgesGeometry(courtGeometry);
+      const outerLines = new THREE.LineSegments(
+        outerBoundary,
+        new THREE.LineBasicMaterial({ color: 0xffffff, linewidth: 2 })
+      );
+      outerLines.rotation.x = -Math.PI / 2;
+      outerLines.position.y = -4.99;
+      courtGroup.add(outerLines);
+
+      // Center line
+      const centerLineGeometry = new THREE.PlaneGeometry(0.05, 13.4);
+      const centerLine = new THREE.Mesh(centerLineGeometry, lineMaterial);
+      centerLine.rotation.x = -Math.PI / 2;
+      centerLine.position.y = -4.98;
+      courtGroup.add(centerLine);
+
+      // Service lines (short service line at 1.98m from net)
+      const serviceLineGeometry = new THREE.PlaneGeometry(6.1, 0.05);
+      const serviceLine1 = new THREE.Mesh(serviceLineGeometry, lineMaterial);
+      serviceLine1.rotation.x = -Math.PI / 2;
+      serviceLine1.position.set(0, -4.98, -1.98);
+      courtGroup.add(serviceLine1);
+
+      const serviceLine2 = new THREE.Mesh(serviceLineGeometry, lineMaterial);
+      serviceLine2.rotation.x = -Math.PI / 2;
+      serviceLine2.position.set(0, -4.98, 1.98);
+      courtGroup.add(serviceLine2);
+
+      // Back boundary lines (doubles long service line)
+      const backLineGeometry = new THREE.PlaneGeometry(6.1, 0.05);
+      const backLine1 = new THREE.Mesh(backLineGeometry, lineMaterial);
+      backLine1.rotation.x = -Math.PI / 2;
+      backLine1.position.set(0, -4.98, -6.7);
+      courtGroup.add(backLine1);
+
+      const backLine2 = new THREE.Mesh(backLineGeometry, lineMaterial);
+      backLine2.rotation.x = -Math.PI / 2;
+      backLine2.position.set(0, -4.98, 6.7);
+      courtGroup.add(backLine2);
+
+      // Net (height: 1.55m at edges, 1.524m at center)
+      const netGeometry = new THREE.PlaneGeometry(6.1, 1.55);
+      const netMaterial = new THREE.MeshBasicMaterial({
+        color: 0xffffff,
+        transparent: true,
+        opacity: 0.3,
+        side: THREE.DoubleSide,
+      });
+      const net = new THREE.Mesh(netGeometry, netMaterial);
+      net.position.set(0, -4.23, 0);
+      courtGroup.add(net);
+
+      // Net top tape (white)
+      const netTapeGeometry = new THREE.CylinderGeometry(0.02, 0.02, 6.1, 8);
+      const netTapeMaterial = new THREE.MeshPhongMaterial({ color: 0xffffff });
+      const netTape = new THREE.Mesh(netTapeGeometry, netTapeMaterial);
+      netTape.rotation.z = Math.PI / 2;
+      netTape.position.set(0, -3.45, 0);
+      courtGroup.add(netTape);
+
+      scene.add(courtGroup);
 
       // Create joints group
       const jointsGroup = new THREE.Group();
