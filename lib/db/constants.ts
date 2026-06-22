@@ -21,6 +21,10 @@ export const COLLECTIONS = {
   // NEW Sprint 2: Attendance polling system
   POLLS:             'session_polls',
   POLL_RESPONSES:    'poll_responses',
+
+  // NEW Sprint 3: 3D Training Lab
+  TECHNIQUES:        'techniques',
+  USER_PROGRESS:     'user_progress',
 } as const;
 
 export type CollectionName = typeof COLLECTIONS[keyof typeof COLLECTIONS];

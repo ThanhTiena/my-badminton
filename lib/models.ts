@@ -478,3 +478,97 @@ export interface PollResponseDoc {
   respondedAt: Date;                   // First response timestamp
   updatedAt?: Date;                    // Last update timestamp
 }
+
+/* ─────────────────────────────────────────────────────────────
+   3D TRAINING LAB — TechniqueDoc  (collection: "techniques")
+
+   Professional badminton techniques with 3D pose data.
+   Sprint 3: 3D Training Lab — Technique Library & Persistence
+───────────────────────────────────────────────────────────── */
+
+export type TechniqueCategory = 'offensive' | 'defensive' | 'serve' | 'footwork' | 'net_play' | 'specialty';
+export type DifficultyLevel = 'beginner' | 'intermediate' | 'advanced' | 'expert';
+
+export interface Joint3D {
+  x: number;        // Canvas X coordinate (or 3D world X)
+  y: number;        // Canvas Y coordinate (or 3D world Y)
+  z: number;        // Depth (-30 to +30 for 2.5D, or 3D world Z)
+}
+
+export interface TechniquePose {
+  name: string;                        // "Ready Position", "Wind-Up", "Contact Point"
+  description: string;                 // "Balanced stance, racket up"
+  durationMs?: number;                 // How long to hold this pose (animation)
+  joints: Record<string, Joint3D>;     // Joint ID → 3D position
+}
+
+export interface TechniqueDoc {
+  _id?: ObjectId;
+
+  // Identity
+  techniqueId: string;                 // "power-smash" (slug)
+  name: string;                        // "Power Smash"
+  category: TechniqueCategory;
+  difficulty: DifficultyLevel;
+
+  // Content
+  description: string;                 // Short description (1-2 sentences)
+  keyPoints: string[];                 // Coaching tips (3-7 bullet points)
+  poses: TechniquePose[];              // Sequence of poses (2-5 typically)
+
+  // Metadata
+  thumbnailUrl?: string;               // Preview image URL
+  videoUrl?: string;                   // Optional demo video
+  tags?: string[];                     // ["overhead", "power", "finishing"]
+
+  // Analytics
+  viewCount: number;                   // How many times viewed
+  favoriteCount: number;               // How many users favorited
+
+  // Content Management
+  author?: string;                     // "Coach Carlos" or "System"
+  isOfficial: boolean;                 // True for curated content
+  isPublished: boolean;                // False = draft mode
+
+  // Audit
+  createdAt: Date;
+  updatedAt: Date;
+  createdBy?: string;                  // Admin username
+}
+
+/* ─────────────────────────────────────────────────────────────
+   USER PROGRESS — UserProgressDoc  (collection: "user_progress")
+
+   Tracks user training progress and favorites.
+   Sprint 3: 3D Training Lab — Progress Tracking
+───────────────────────────────────────────────────────────── */
+
+export interface UserProgressDoc {
+  _id?: ObjectId;
+
+  // User Identity
+  userId: ObjectId;                    // Reference to PlayerDoc
+  userName: string;                    // Snapshot
+
+  // Favorites
+  favoriteTechniques: ObjectId[];      // Array of TechniqueDoc IDs
+
+  // View History
+  viewHistory: {
+    techniqueId: ObjectId;
+    viewedAt: Date;
+    viewCount: number;                 // How many times they've viewed it
+  }[];
+
+  // Custom Techniques
+  customTechniques: {
+    name: string;
+    description?: string;
+    poses: TechniquePose[];
+    createdAt: Date;
+  }[];
+
+  // Audit
+  createdAt: Date;
+  updatedAt: Date;
+}

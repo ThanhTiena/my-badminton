@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import Head from 'next/head';
+import type { TechniqueDoc } from '@/lib/models';
 
 /* ════════════════════════════════════════════════════
    TYPES & CONSTANTS
@@ -17,17 +18,22 @@ interface Joint {
 interface Pose {
   name: string;
   description: string;
+  durationMs?: number;
   joints: Record<string, { x: number; y: number; z: number }>;
 }
 
 interface Technique {
+  _id?: string;
   id: string;
+  techniqueId?: string;
   name: string;
-  category: 'offensive' | 'defensive' | 'serve' | 'footwork';
-  difficulty: 'beginner' | 'intermediate' | 'advanced';
+  category: 'offensive' | 'defensive' | 'serve' | 'footwork' | 'net_play' | 'specialty';
+  difficulty: 'beginner' | 'intermediate' | 'advanced' | 'expert';
   description: string;
   keyPoints: string[];
   poses: Pose[];
+  tags?: string[];
+  viewCount?: number;
 }
 
 const TECHNIQUES: Technique[] = [
@@ -185,15 +191,56 @@ const TECHNIQUES: Technique[] = [
 ════════════════════════════════════════════════════ */
 
 export default function TrainingPage() {
+  const [techniques, setTechniques] = useState<Technique[]>(TECHNIQUES);
   const [selectedTechnique, setSelectedTechnique] = useState<Technique | null>(TECHNIQUES[0]);
   const [currentPoseIndex, setCurrentPoseIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [editMode, setEditMode] = useState(false);
   const [selectedJoint, setSelectedJoint] = useState<string | null>(null);
   const [customJoints, setCustomJoints] = useState<Record<string, { x: number; y: number; z: number }>>({});
+  const [loading, setLoading] = useState(false);
+  const [selectedCategory, setSelectedCategory] = useState<string>('all');
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const animationRef = useRef<number | null>(null);
+
+  // Fetch techniques from API on mount
+  useEffect(() => {
+    fetchTechniques();
+  }, []);
+
+  const fetchTechniques = async () => {
+    try {
+      setLoading(true);
+      const res = await fetch('/api/techniques?published=true');
+      if (res.ok) {
+        const data = await res.json();
+        if (data.techniques && data.techniques.length > 0) {
+          // Transform API techniques to match local format
+          const apiTechniques = data.techniques.map((t: TechniqueDoc) => ({
+            _id: t._id?.toString(),
+            id: t.techniqueId,
+            techniqueId: t.techniqueId,
+            name: t.name,
+            category: t.category,
+            difficulty: t.difficulty,
+            description: t.description,
+            keyPoints: t.keyPoints,
+            poses: t.poses,
+            tags: t.tags,
+            viewCount: t.viewCount,
+          }));
+          setTechniques(apiTechniques);
+          setSelectedTechnique(apiTechniques[0]);
+        }
+      }
+    } catch (error) {
+      console.error('Failed to fetch techniques:', error);
+      // Fallback to local techniques
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const currentJoints = editMode && Object.keys(customJoints).length > 0
     ? customJoints
@@ -468,13 +515,39 @@ export default function TrainingPage() {
                 padding: 20,
               }}>
                 <h2 style={{ fontSize: 18, fontWeight: 700, color: '#fff', marginBottom: 16 }}>
-                  📚 Techniques
+                  📚 Techniques {loading && <span style={{ fontSize: 12, color: 'rgba(255,255,255,.6)' }}>Loading...</span>}
                 </h2>
 
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                  {TECHNIQUES.map((tech) => (
+                {/* Category Filter */}
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 16 }}>
+                  {['all', 'offensive', 'defensive', 'serve', 'footwork', 'net_play'].map((cat) => (
                     <button
-                      key={tech.id}
+                      key={cat}
+                      onClick={() => setSelectedCategory(cat)}
+                      style={{
+                        background: selectedCategory === cat ? '#7c3aed' : 'rgba(255,255,255,.1)',
+                        border: 'none',
+                        borderRadius: 6,
+                        padding: '6px 12px',
+                        fontSize: 11,
+                        fontWeight: 600,
+                        color: '#fff',
+                        cursor: 'pointer',
+                        textTransform: 'capitalize',
+                        transition: 'all 0.2s',
+                      }}
+                    >
+                      {cat.replace('_', ' ')}
+                    </button>
+                  ))}
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 12, maxHeight: 600, overflowY: 'auto' }}>
+                  {techniques
+                    .filter(tech => selectedCategory === 'all' || tech.category === selectedCategory)
+                    .map((tech) => (
+                    <button
+                      key={tech.id || tech.techniqueId}
                       onClick={() => {
                         setSelectedTechnique(tech);
                         setCurrentPoseIndex(0);
@@ -482,10 +555,10 @@ export default function TrainingPage() {
                         stopAnimation();
                       }}
                       style={{
-                        background: selectedTechnique?.id === tech.id
+                        background: selectedTechnique?.id === tech.id || selectedTechnique?.techniqueId === tech.techniqueId
                           ? 'rgba(124,58,237,.3)'
                           : 'rgba(255,255,255,.05)',
-                        border: selectedTechnique?.id === tech.id
+                        border: selectedTechnique?.id === tech.id || selectedTechnique?.techniqueId === tech.techniqueId
                           ? '2px solid #7c3aed'
                           : '1px solid rgba(255,255,255,.1)',
                         borderRadius: 12,
@@ -499,8 +572,13 @@ export default function TrainingPage() {
                         {tech.name}
                       </div>
                       <div style={{ fontSize: 11, color: 'rgba(255,255,255,.6)' }}>
-                        {tech.category} • {tech.difficulty}
+                        {tech.category.replace('_', ' ')} • {tech.difficulty}
                       </div>
+                      {tech.viewCount !== undefined && (
+                        <div style={{ fontSize: 10, color: 'rgba(255,255,255,.5)', marginTop: 4 }}>
+                          👁 {tech.viewCount} views
+                        </div>
+                      )}
                     </button>
                   ))}
                 </div>
