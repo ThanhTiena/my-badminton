@@ -13,6 +13,10 @@ export const COLLECTIONS = {
   TOURNAMENT_HISTORY:'tournament_history',
   BETS:              'bets',
   USERS:             'users',          // replaces admin_config
+
+  // NEW Sprint 1: Multi-venue and pricing
+  VENUES:            'venues',
+  PRICING_RULES:     'pricing_rules',
 } as const;
 
 export type CollectionName = typeof COLLECTIONS[keyof typeof COLLECTIONS];

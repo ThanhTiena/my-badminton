@@ -35,7 +35,22 @@ export interface CourtSessionDoc {
   year: number;
   month: number;   // 1–12
   week: number;    // ISO week number (1–53)
-  /** Total court rental fee for the session (VND) */
+
+  // NEW Sprint 1: Venue Reference
+  venueId?: ObjectId;                // Reference to VenueDoc
+  venueName?: string;                // Snapshot of venue name
+  venueAddress?: string;             // Snapshot (optional)
+
+  // NEW Sprint 1: Pricing Rule Applied
+  pricingRuleId?: ObjectId;          // Which rule was used
+  pricingRuleName?: string;          // Snapshot of rule name
+  pricingRateApplied?: number;       // e.g., 1.5 or 250000
+  pricingRateType?: RateType;        // 'multiplier' or 'fixed'
+
+  // NEW Sprint 1: Pricing Breakdown
+  baseCourtFee?: number;             // Before rule applied
+
+  /** Total court rental fee for the session (VND) — after pricing rules applied */
   courtFee: number;
   numShuttlecocks: number;
   shuttlecockUnitPrice: number;
@@ -104,6 +119,10 @@ export interface ImportRow {
   note?: string;
   /** See CourtSessionDoc.shuttlecocksBulkPurchase */
   shuttlecocksBulkPurchase?: boolean;
+  // NEW Sprint 1: Venue and pricing support
+  venueId?: string;             // Optional venue reference
+  timeStart?: string;           // "HH:mm" format (e.g. "19:00")
+  duration?: number;            // Hours (e.g. 2)
 }
 
 /* ─────────────────────────────────────────────────────────────
@@ -273,4 +292,112 @@ export interface TournamentHistoryDoc {
     scoreFor: number;
     scoreAgainst: number;
   }[];
+}
+
+/* ─────────────────────────────────────────────────────────────
+   VENUE MANAGEMENT — VenueDoc  (collection: "venues")
+
+   Multi-venue support for pricing and analytics.
+   Sprint 1: S1H.1 — Venue Management System
+───────────────────────────────────────────────────────────── */
+export interface VenueDoc {
+  _id?: ObjectId;
+
+  // Identity
+  name: string;                      // "Sunrise Sports Complex"
+  slug: string;                      // "sunrise-sports" (URL-friendly)
+
+  // Location
+  address?: string;                  // "123 Main St, District 1, HCMC"
+  district?: string;                 // "District 1" (for filtering)
+
+  // Capacity
+  courtCount: number;                // 8 courts available
+
+  // Base Pricing (VND)
+  baseHourlyRate: number;            // 200,000 VND/hour (default)
+
+  // Facilities
+  facilities?: string[];             // ["Parking", "Shower", "AC", "Lockers"]
+
+  // Contact
+  contactPerson?: string;            // "Mr. Nguyen"
+  contactPhone?: string;             // "+84 901 234 567"
+
+  // Admin notes
+  notes?: string;                    // "Booking requires 24h notice"
+
+  // Soft delete
+  active: boolean;                   // true = available, false = archived
+
+  // Audit
+  createdAt: Date;
+  updatedAt: Date;
+  createdBy?: string;                // Admin username
+}
+
+/* ─────────────────────────────────────────────────────────────
+   PRICING RULES — PricingRuleDoc  (collection: "pricing_rules")
+
+   Dynamic pricing based on time, day, date, and venue.
+   Sprint 1: S1H.2 — Time-Based Pricing Rules
+   Sprint 1: S1H.3 — Holiday/Special Event Pricing
+───────────────────────────────────────────────────────────── */
+
+export type RuleType = 'time_based' | 'special_event' | 'seasonal';
+export type RateType = 'multiplier' | 'fixed';
+export type CombinationStrategy = 'multiply' | 'highest' | 'additive';
+
+export interface PricingRuleDoc {
+  _id?: ObjectId;
+
+  // Rule Identity
+  ruleName: string;                    // "Weekend Peak Hours"
+  ruleType: RuleType;
+
+  // Scope — null = applies globally
+  venueId?: ObjectId;                  // Restrict to specific venue
+  venueName?: string;                  // Snapshot for audit trail
+
+  // Day Pattern (ISO 8601 weekday: 1=Mon, 7=Sun)
+  daysOfWeek?: number[];               // [6, 7] = Saturday & Sunday
+                                        // null = all days
+
+  // Time Range (24-hour format HH:mm)
+  timeStart?: string;                  // "18:00" (6 PM)
+  timeEnd?: string;                    // "21:00" (9 PM)
+                                        // null = all day
+
+  // Date Range (for seasonal/event pricing)
+  dateStart?: string;                  // "2026-06-01" (ISO 8601)
+  dateEnd?: string;                    // "2026-08-31"
+                                        // null = always active
+
+  // Pricing Adjustment
+  rateType: RateType;                  // How to apply rate
+  rateValue: number;                   // 1.5 = 50% more (multiplier)
+                                        // 250000 = fixed price (VND)
+
+  // Special Event Metadata (optional)
+  eventName?: string;                  // "Lunar New Year 2026"
+  eventIcon?: string;                  // "🎉" or "🎊"
+
+  // Overlapping Rule Strategy (future use)
+  combinationStrategy?: CombinationStrategy;
+                                        // multiply: 1.5 × 1.3 = 1.95x
+                                        // highest: max(1.5, 1.3) = 1.5x
+                                        // additive: 1.5 + 1.3 - 1 = 1.8x
+
+  // Priority (for rule resolution)
+  priority: number;                    // 1-1000 (higher = more specific)
+                                        // 100: venue + time + day
+                                        // 50:  time + day only
+                                        // 10:  day only
+                                        // 1:   global default
+
+  // Lifecycle
+  active: boolean;                     // Enable/disable rule
+  createdAt: Date;
+  updatedAt: Date;
+  createdBy?: string;                  // Admin username
 }

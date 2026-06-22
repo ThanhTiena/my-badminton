@@ -21,6 +21,9 @@ export async function createIndexes() {
     db.collection(COLLECTIONS.COURT_SESSIONS).createIndex({ sessionDate: 1 }),
     db.collection(COLLECTIONS.COURT_SESSIONS).createIndex({ year: 1, month: 1 }),
     db.collection(COLLECTIONS.COURT_SESSIONS).createIndex({ year: 1, week: 1 }),
+    // NEW Sprint 1: venue analytics and pricing tracking
+    db.collection(COLLECTIONS.COURT_SESSIONS).createIndex({ venueId: 1, sessionDate: -1 }),
+    db.collection(COLLECTIONS.COURT_SESSIONS).createIndex({ pricingRuleId: 1 }),
 
     // payment_paid
     db.collection(COLLECTIONS.PAYMENT_PAID).createIndex(
@@ -38,5 +41,22 @@ export async function createIndexes() {
 
     // users (auth)
     db.collection(COLLECTIONS.USERS).createIndex({ username: 1 }, { unique: true }),
+
+    // NEW Sprint 1: venues
+    db.collection(COLLECTIONS.VENUES).createIndex(
+      { name: 1 },
+      { unique: true, collation: { locale: 'vi', strength: 2 } }
+    ),
+    db.collection(COLLECTIONS.VENUES).createIndex({ active: 1, name: 1 }),
+    db.collection(COLLECTIONS.VENUES).createIndex(
+      { slug: 1 },
+      { unique: true, sparse: true }
+    ),
+
+    // NEW Sprint 1: pricing_rules
+    db.collection(COLLECTIONS.PRICING_RULES).createIndex({ active: 1, priority: -1 }),
+    db.collection(COLLECTIONS.PRICING_RULES).createIndex({ venueId: 1, active: 1, priority: -1 }),
+    db.collection(COLLECTIONS.PRICING_RULES).createIndex({ active: 1, dateStart: 1, dateEnd: 1 }),
+    db.collection(COLLECTIONS.PRICING_RULES).createIndex({ createdAt: -1 }),
   ]);
 }
