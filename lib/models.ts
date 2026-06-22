@@ -572,3 +572,107 @@ export interface UserProgressDoc {
   createdAt: Date;
   updatedAt: Date;
 }
+
+/* ─────────────────────────────────────────────────────────────
+   MATCH SIMULATION — MatchSimulationDoc  (collection: "match_simulations")
+
+   4-player match simulation with rally sequences.
+   Sprint 3: 3D Training Lab — Match Simulation & Visualization
+───────────────────────────────────────────────────────────── */
+
+export type PlayerPosition = 'team1_left' | 'team1_right' | 'team2_left' | 'team2_right';
+export type ShotType = 'serve' | 'return' | 'smash' | 'drop' | 'clear' | 'net' | 'drive';
+
+export interface PlayerInMatch {
+  playerId?: ObjectId;           // Reference to PlayerDoc (optional)
+  playerName: string;            // "Alice"
+  position: PlayerPosition;      // Court position
+  techniqueId?: ObjectId;        // Default technique for this player
+}
+
+export interface ShotAction {
+  shotId: string;                // "shot_1", "shot_2", etc.
+  frameStart: number;            // Animation frame when shot starts (0-based)
+  frameDuration: number;         // How many frames this shot takes (e.g., 60 = 1 second)
+
+  // Who hits
+  playerPosition: PlayerPosition;
+
+  // What shot
+  shotType: ShotType;
+  techniqueId: ObjectId;         // Which technique animation to use
+
+  // Shuttlecock trajectory
+  trajectory: {
+    startX: number;              // Starting 3D position
+    startY: number;
+    startZ: number;
+    endX: number;                // Ending 3D position
+    endY: number;
+    endZ: number;
+    peakHeight: number;          // Maximum height during arc
+    spinRotations: number;       // Visual spin effect (0-3)
+  };
+
+  // Impact
+  landingResult: 'in_bounds' | 'out' | 'net' | 'winner';
+  pointWinner?: 'team1' | 'team2'; // Who won the point (if rally ended)
+}
+
+export interface RallySequence {
+  rallyId: string;               // "rally_1", "rally_2", etc.
+  rallyNumber: number;           // 1, 2, 3... (for display)
+  server: PlayerPosition;        // Who serves
+  shots: ShotAction[];           // Sequence of shots in this rally
+  pointWinner: 'team1' | 'team2';
+  scoreAfter: {
+    team1: number;
+    team2: number;
+  };
+}
+
+export interface MatchSimulationDoc {
+  _id?: ObjectId;
+
+  // Match Info
+  matchTitle: string;            // "Pro Doubles Championship"
+  matchDescription?: string;     // Optional notes
+
+  // Players (4 for doubles)
+  team1: {
+    teamName: string;            // "Team A"
+    player1: PlayerInMatch;      // Left side
+    player2: PlayerInMatch;      // Right side
+  };
+
+  team2: {
+    teamName: string;            // "Team B"
+    player1: PlayerInMatch;      // Left side
+    player2: PlayerInMatch;      // Right side
+  };
+
+  // Match Sequence
+  rallies: RallySequence[];      // All rallies in order
+
+  // Final Score
+  finalScore: {
+    team1: number;
+    team2: number;
+  };
+
+  winner: 'team1' | 'team2';
+
+  // Metadata
+  duration: number;              // Total animation frames
+  isOfficial: boolean;           // Official demo vs user-created
+  isPublished: boolean;          // Public visibility
+
+  // Analytics
+  viewCount: number;
+  favoriteCount: number;
+
+  // Audit
+  createdBy?: string;
+  createdAt: Date;
+  updatedAt: Date;
+}

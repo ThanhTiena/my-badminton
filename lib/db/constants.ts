@@ -25,6 +25,7 @@ export const COLLECTIONS = {
   // NEW Sprint 3: 3D Training Lab
   TECHNIQUES:        'techniques',
   USER_PROGRESS:     'user_progress',
+  MATCH_SIMULATIONS: 'match_simulations',
 } as const;
 
 export type CollectionName = typeof COLLECTIONS[keyof typeof COLLECTIONS];
