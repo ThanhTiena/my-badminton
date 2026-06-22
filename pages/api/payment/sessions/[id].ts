@@ -39,6 +39,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       highlight?: boolean; highlightNote?: string;
       invoiceImages?: string[] | null;
       shuttlecocksBulkPurchase?: boolean;
+      draftMode?: boolean;
       /** Toggle paid for one player: { playerName, paid } */
       playerPaid?: { playerName: string; paid: boolean };
     }>;
@@ -109,6 +110,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     if (body.note !== undefined)                    $set.note                      = body.note;
     if (body.highlight !== undefined)               $set.highlight                 = body.highlight;
     if (body.highlightNote !== undefined)           $set.highlightNote             = body.highlightNote;
+    if (body.draftMode !== undefined)               $set.draftMode                 = body.draftMode;
     if (body.invoiceImages !== undefined) {
       const urls: string[] = [];
       const images = body.invoiceImages ?? [];

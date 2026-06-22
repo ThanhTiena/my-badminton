@@ -1948,7 +1948,7 @@ function RankingsScreen({ onBack, onOpenProfile }: { onBack: () => void; onOpenP
 /* ════════════════════════════════════════════════════
    PAYMENT SCREEN
 ════════════════════════════════════════════════════ */
-type PaymentTab = 'summary' | 'add' | 'import' | 'weights';
+type PaymentTab = 'summary' | 'add' | 'import' | 'weights' | 'drafts';
 type SummaryMode = 'monthly' | 'weekly' | 'range';
 
 interface PlayerSummary {
@@ -2354,6 +2354,271 @@ function PricingRulesScreen({ onBack }: { onBack: () => void }) {
               </div>
             </Card>
           ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ════════════════════════════════════════════════════
+   DRAFT SESSIONS TAB
+════════════════════════════════════════════════════ */
+function DraftSessionsTab() {
+  const [draftSessions, setDraftSessions] = useState<CourtSessionDoc[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [editingSession, setEditingSession] = useState<CourtSessionDoc | null>(null);
+  const [courtFee, setCourtFee] = useState('');
+  const [numShuttlecocks, setNumShuttlecocks] = useState('');
+  const [shuttlecockUnitPrice, setShuttlecockUnitPrice] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    fetchDraftSessions();
+  }, []);
+
+  const fetchDraftSessions = async () => {
+    try {
+      const res = await fetch('/api/payment/sessions?draftMode=true');
+      const data = await res.json();
+      setDraftSessions(data.sessions || []);
+      setLoading(false);
+    } catch (err) {
+      console.error('Failed to fetch draft sessions:', err);
+      setLoading(false);
+    }
+  };
+
+  const handleEditDraft = (session: CourtSessionDoc) => {
+    setEditingSession(session);
+    setCourtFee(String(session.courtFee || 0));
+    setNumShuttlecocks(String(session.numShuttlecocks || 0));
+    setShuttlecockUnitPrice(String(session.shuttlecockUnitPrice || 0));
+  };
+
+  const handleFinalizeDraft = async () => {
+    if (!editingSession) return;
+
+    setSaving(true);
+    try {
+      const res = await fetch(`/api/payment/sessions/${editingSession._id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          courtFee: Number(courtFee),
+          numShuttlecocks: Number(numShuttlecocks),
+          shuttlecockUnitPrice: Number(shuttlecockUnitPrice),
+          draftMode: false, // Finalize the draft
+        }),
+      });
+
+      if (res.ok) {
+        alert('Draft finalized successfully!');
+        setEditingSession(null);
+        await fetchDraftSessions();
+      } else {
+        const error = await res.json();
+        alert(`Error: ${error.error || 'Failed to finalize draft'}`);
+      }
+    } catch (err) {
+      alert('Failed to finalize draft');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDeleteDraft = async (sessionId: string) => {
+    if (!confirm('Delete this draft session?')) return;
+
+    try {
+      const res = await fetch('/api/payment/sessions', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: [sessionId] }),
+      });
+
+      if (res.ok) {
+        alert('Draft deleted successfully');
+        await fetchDraftSessions();
+      }
+    } catch (err) {
+      alert('Failed to delete draft');
+    }
+  };
+
+  if (loading) {
+    return (
+      <Card>
+        <div style={{ textAlign: 'center', padding: 40, color: 'var(--text3)' }}>
+          Loading draft sessions...
+        </div>
+      </Card>
+    );
+  }
+
+  return (
+    <div>
+      <Card style={{ marginBottom: 16 }}>
+        <CardTitle>📝 Draft Payment Sessions</CardTitle>
+        <p style={{ fontSize: 13, color: 'var(--text2)', marginBottom: 0 }}>
+          These sessions were auto-created from polls. Fill in costs and finalize to add them to your payment records.
+        </p>
+      </Card>
+
+      {draftSessions.length === 0 ? (
+        <Card>
+          <div style={{ textAlign: 'center', padding: 40, color: 'var(--text3)' }}>
+            No draft sessions found
+          </div>
+        </Card>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          {draftSessions.map((session) => (
+            <Card key={String(session._id)} style={{ position: 'relative' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
+                <div>
+                  <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 4 }}>
+                    📅 {new Date(session.sessionDate).toLocaleDateString()}
+                  </div>
+                  {session.venueName && (
+                    <div style={{ fontSize: 13, color: 'var(--text2)', marginBottom: 4 }}>
+                      📍 {session.venueName}
+                    </div>
+                  )}
+                  {session.note && (
+                    <div style={{ fontSize: 13, color: 'var(--text3)', fontStyle: 'italic' }}>
+                      {session.note}
+                    </div>
+                  )}
+                </div>
+                <span style={{
+                  padding: '4px 10px',
+                  borderRadius: 6,
+                  background: 'rgba(245,158,11,.15)',
+                  color: 'var(--accent)',
+                  fontSize: 11,
+                  fontWeight: 700,
+                }}>
+                  DRAFT
+                </span>
+              </div>
+
+              <div style={{ fontSize: 13, color: 'var(--text2)', marginBottom: 12 }}>
+                <strong>Players ({session.players.length}):</strong> {session.players.map(p => p.name).join(', ')}
+              </div>
+
+              <div style={{ display: 'flex', gap: 8 }}>
+                <Btn variant="primary" size="sm" onClick={() => handleEditDraft(session)}>
+                  ✏️ Fill Costs & Finalize
+                </Btn>
+                <Btn variant="danger" size="sm" onClick={() => handleDeleteDraft(String(session._id))}>
+                  🗑️ Delete
+                </Btn>
+              </div>
+            </Card>
+          ))}
+        </div>
+      )}
+
+      {/* Edit Draft Modal */}
+      {editingSession && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(30,27,75,.45)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1000,
+            backdropFilter: 'blur(8px)',
+          }}
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setEditingSession(null);
+          }}
+        >
+          <div
+            style={{
+              background: 'var(--bg-card)',
+              borderRadius: 'var(--r)',
+              padding: 32,
+              width: '100%',
+              maxWidth: 500,
+              boxShadow: '0 24px 80px rgba(124,58,237,.25)',
+              border: '1px solid var(--border)',
+            }}
+          >
+            <CardTitle style={{ marginBottom: 20 }}>
+              ✏️ Finalize Draft Session
+            </CardTitle>
+
+            <div style={{ fontSize: 13, color: 'var(--text2)', marginBottom: 16 }}>
+              <strong>Date:</strong> {new Date(editingSession.sessionDate).toLocaleDateString()}<br />
+              <strong>Players:</strong> {editingSession.players.length}
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+              <div>
+                <label style={{ display: 'block', marginBottom: 6, fontSize: 13, fontWeight: 600 }}>
+                  Court Fee (VND) *
+                </label>
+                <input
+                  className="input"
+                  type="number"
+                  value={courtFee}
+                  onChange={(e) => setCourtFee(e.target.value)}
+                  placeholder="e.g. 200000"
+                  required
+                />
+              </div>
+
+              <div>
+                <label style={{ display: 'block', marginBottom: 6, fontSize: 13, fontWeight: 600 }}>
+                  Number of Shuttlecocks *
+                </label>
+                <input
+                  className="input"
+                  type="number"
+                  value={numShuttlecocks}
+                  onChange={(e) => setNumShuttlecocks(e.target.value)}
+                  placeholder="e.g. 5"
+                  required
+                />
+              </div>
+
+              <div>
+                <label style={{ display: 'block', marginBottom: 6, fontSize: 13, fontWeight: 600 }}>
+                  Shuttlecock Unit Price (VND) *
+                </label>
+                <input
+                  className="input"
+                  type="number"
+                  value={shuttlecockUnitPrice}
+                  onChange={(e) => setShuttlecockUnitPrice(e.target.value)}
+                  placeholder="e.g. 25000"
+                  required
+                />
+              </div>
+
+              <div style={{ display: 'flex', gap: 12, marginTop: 8 }}>
+                <Btn
+                  variant="secondary"
+                  full
+                  onClick={() => setEditingSession(null)}
+                  disabled={saving}
+                >
+                  Cancel
+                </Btn>
+                <Btn
+                  variant="success"
+                  full
+                  onClick={handleFinalizeDraft}
+                  disabled={saving || !courtFee || !numShuttlecocks || !shuttlecockUnitPrice}
+                >
+                  {saving ? 'Saving...' : '✅ Finalize & Save'}
+                </Btn>
+              </div>
+            </div>
+          </div>
         </div>
       )}
     </div>
@@ -3003,6 +3268,7 @@ function PaymentScreen({ onBack, tournamentPlayers = [], onOpenProfile }: { onBa
 
   const TABS: [PaymentTab, string][] = isAdmin ? [
     ['summary', '💰 Summary'],
+    ['drafts', '📝 Drafts'],
     ['add', '➕ Add Session'],
     ['import', '📥 Import'],
     ['weights', '⚖️ Weights'],
@@ -4259,6 +4525,11 @@ function PaymentScreen({ onBack, tournamentPlayers = [], onOpenProfile }: { onBa
             </div>
           </div>
         </div>
+      )}
+
+      {/* ═══════════════ DRAFTS TAB ═══════════════ */}
+      {tab === 'drafts' && (
+        <DraftSessionsTab />
       )}
 
       {/* ═══════════════ IMPORT TAB ═══════════════ */}

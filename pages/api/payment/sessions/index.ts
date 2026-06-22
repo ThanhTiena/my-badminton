@@ -21,7 +21,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   // ── GET ──────────────────────────────────────────────────────────────────
   if (req.method === 'GET') {
-    const { month, week, skip = '0', limit = '50' } = req.query as Record<string, string>;
+    const { month, week, draftMode, skip = '0', limit = '50' } = req.query as Record<string, string>;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const filter: Record<string, any> = {};
 
@@ -33,6 +33,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       const [y, wPart] = week.split('-W');
       filter.year = Number(y);
       filter.week = Number(wPart);
+    }
+
+    // Filter by draft mode
+    if (draftMode === 'true') {
+      filter.draftMode = true;
+    } else if (draftMode === 'false') {
+      filter.draftMode = { $ne: true }; // Exclude drafts
     }
 
     const total    = await col.countDocuments(filter);
