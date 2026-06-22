@@ -1748,3 +1748,137 @@ input:focus-visible,
   color: #f59e0b;
 }
 
+/* ════════════════════════════════════════════════════
+   PAYMENT TABLE — Mobile overflow fix
+════════════════════════════════════════════════════ */
+.payment-table-wrapper {
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  position: relative;
+}
+
+.payment-table {
+  position: relative;
+}
+
+/* Sticky first column (player name) with shadow */
+.payment-table th:first-child,
+.payment-table td:first-child {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  box-shadow: 2px 0 4px rgba(0, 0, 0, 0.08);
+}
+
+.payment-table thead th:first-child {
+  z-index: 3;
+}
+
+/* Sticky table headers for vertical scroll */
+.payment-table thead {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.payment-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.payment-table thead th:first-child {
+  z-index: 3;
+}
+
+/* Mobile-specific optimizations */
+@media (max-width: 768px) {
+  .payment-table-wrapper {
+    border-radius: 8px;
+    margin-left: -16px;
+    margin-right: -16px;
+    border-left: none;
+    border-right: none;
+    max-height: 70vh;
+    overflow-y: auto;
+  }
+
+  .payment-table {
+    font-size: 11px;
+    min-width: 100%;
+  }
+
+  .payment-table th,
+  .payment-table td {
+    padding: 6px 8px;
+    font-size: 11px;
+    white-space: nowrap;
+  }
+
+  .payment-table th:first-child,
+  .payment-table td:first-child {
+    min-width: 100px;
+    max-width: 120px;
+    font-size: 12px;
+    background: var(--card);
+    box-shadow: 2px 0 8px rgba(0, 0, 0, 0.12);
+  }
+
+  .payment-table thead th {
+    font-size: 9px;
+    padding: 6px 6px;
+    letter-spacing: 0.3px;
+    background: var(--bg3);
+  }
+
+  .payment-table thead th:first-child {
+    font-size: 11px;
+    background: var(--card);
+  }
+}
+
+/* Medium mobile screens (390px - 414px) */
+@media (min-width: 376px) and (max-width: 768px) {
+  .payment-table th:first-child,
+  .payment-table td:first-child {
+    min-width: 110px;
+    max-width: 130px;
+  }
+}
+
+/* Extra small screens (360px - 375px) */
+@media (max-width: 375px) {
+  .payment-table-wrapper {
+    max-height: 65vh;
+  }
+
+  .payment-table {
+    font-size: 10px;
+  }
+
+  .payment-table th,
+  .payment-table td {
+    padding: 5px 6px;
+    font-size: 10px;
+  }
+
+  .payment-table th:first-child,
+  .payment-table td:first-child {
+    min-width: 90px;
+    max-width: 110px;
+    font-size: 11px;
+    background: var(--card);
+  }
+
+  .payment-table thead th {
+    font-size: 8px;
+    padding: 5px 4px;
+    background: var(--bg3);
+  }
+
+  .payment-table thead th:first-child {
+    font-size: 10px;
+    background: var(--card);
+  }
+}
+

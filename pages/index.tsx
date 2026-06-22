@@ -934,6 +934,29 @@ function TournamentScreen({
   const isRR = state.tourneyFormat === 'roundrobin';
   const currentRound = getCurrentRound(state);
 
+  // ── Focus Management: Add Player panel ──
+  useEffect(() => {
+    if (!showAddPlayer) return;
+
+    // Store the trigger element (the "Add Player" button)
+    const triggerElement = document.activeElement as HTMLElement;
+
+    // Auto-focus the first player button when panel opens
+    setTimeout(() => {
+      const firstPlayerButton = document.querySelector('[data-add-player-btn]') as HTMLButtonElement;
+      if (firstPlayerButton) {
+        firstPlayerButton.focus();
+      }
+    }, 50);
+
+    return () => {
+      // Restore focus to the trigger element when panel closes
+      if (triggerElement && triggerElement.focus) {
+        setTimeout(() => triggerElement.focus(), 50);
+      }
+    };
+  }, [showAddPlayer]);
+
   const totalM = state.rounds.reduce((a, r) => a + r.matches.filter(m => !m.bye).length, 0);
   const doneM  = state.rounds.reduce((a, r) => a + r.matches.filter(m => m.completed && !m.bye).length, 0);
   const progress = totalM ? Math.round((doneM / totalM) * 100) : 0;
@@ -1009,9 +1032,10 @@ function TournamentScreen({
             <p style={{ fontSize: 13, color: 'var(--text3)' }}>All roster players are already in this tournament.</p>
           ) : (
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-              {addablePlayers.map(p => (
+              {addablePlayers.map((p, idx) => (
                 <button
                   key={p.name}
+                  data-add-player-btn={idx === 0 ? 'first' : undefined}
                   onClick={() => { onAddPlayer(p); setShowAddPlayer(false); }}
                   style={{
                     display: 'flex', alignItems: 'center', gap: 6,
@@ -1019,6 +1043,7 @@ function TournamentScreen({
                     border: '2px solid var(--border)', background: 'var(--bg3)', color: 'var(--text)',
                     transition: 'all .15s',
                   }}
+                  aria-label={`Add ${p.name} to tournament`}
                 >
                   <Badge group={p.group} />
                   {p.name}
@@ -3249,9 +3274,9 @@ function PaymentScreen({ onBack, tournamentPlayers = [], onOpenProfile }: { onBa
                 </div>
 
                 {/* Pivot table */}
-                <div style={{ overflowX: 'auto', borderRadius: 12, border: '1px solid var(--border)', background: 'var(--card)' }}
+                <div className="payment-table-wrapper" style={{ overflowX: 'auto', borderRadius: 12, border: '1px solid var(--border)', background: 'var(--card)' }}
                   onMouseLeave={() => setPopover(null)}>
-                  <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: 600 }}>
+                  <table className="payment-table" style={{ borderCollapse: 'collapse', width: '100%', minWidth: 600 }}>
                     <thead>
                       {/* ── Row 1: Sticky name + Month spanning all session columns ── */}
                       <tr>
@@ -4327,6 +4352,60 @@ export default function TournamentApp() {
     return () => window.removeEventListener('keydown', handleEsc);
   }, [showLogin]);
 
+  // ── Focus Management: Login modal ──
+  useEffect(() => {
+    if (!showLogin) return;
+
+    // Store the trigger element (element that had focus before modal opened)
+    const triggerElement = document.activeElement as HTMLElement;
+
+    // Auto-focus the first input when modal opens
+    setTimeout(() => {
+      const firstInput = document.getElementById('login-username') as HTMLInputElement;
+      if (firstInput) firstInput.focus();
+    }, 50);
+
+    // Focus trap handler
+    function handleTab(e: KeyboardEvent) {
+      if (e.key !== 'Tab') return;
+
+      // Get all focusable elements within the login modal
+      const focusableElements = Array.from(
+        document.querySelectorAll('#login-username, #login-password, #btn-login-submit, .btn-ghost')
+      ).filter(el => {
+        // Only include elements that are visible and within the login modal
+        const parent = el.closest('[role="dialog"]');
+        return parent && parent.getAttribute('aria-labelledby') === 'login-modal-title';
+      }) as HTMLElement[];
+
+      if (focusableElements.length === 0) return;
+
+      const firstElement = focusableElements[0];
+      const lastElement = focusableElements[focusableElements.length - 1];
+
+      // Shift+Tab on first element: go to last element
+      if (e.shiftKey && document.activeElement === firstElement) {
+        e.preventDefault();
+        lastElement.focus();
+      }
+      // Tab on last element: go to first element
+      else if (!e.shiftKey && document.activeElement === lastElement) {
+        e.preventDefault();
+        firstElement.focus();
+      }
+    }
+
+    document.addEventListener('keydown', handleTab);
+
+    return () => {
+      document.removeEventListener('keydown', handleTab);
+      // Restore focus to the trigger element when modal closes
+      if (triggerElement && triggerElement.focus) {
+        setTimeout(() => triggerElement.focus(), 50);
+      }
+    };
+  }, [showLogin]);
+
   // ── Keyboard Navigation: Esc key closes Change Password modal ──
   useEffect(() => {
     if (!showChangePw) return;
@@ -4344,6 +4423,60 @@ export default function TournamentApp() {
 
     window.addEventListener('keydown', handleEsc);
     return () => window.removeEventListener('keydown', handleEsc);
+  }, [showChangePw]);
+
+  // ── Focus Management: Change Password modal ──
+  useEffect(() => {
+    if (!showChangePw) return;
+
+    // Store the trigger element (element that had focus before modal opened)
+    const triggerElement = document.activeElement as HTMLElement;
+
+    // Auto-focus the first input when modal opens
+    setTimeout(() => {
+      const firstInput = document.getElementById('cp-current') as HTMLInputElement;
+      if (firstInput) firstInput.focus();
+    }, 50);
+
+    // Focus trap handler
+    function handleTab(e: KeyboardEvent) {
+      if (e.key !== 'Tab') return;
+
+      // Get all focusable elements within the change password modal
+      const focusableElements = Array.from(
+        document.querySelectorAll('#cp-current, #cp-new, #cp-confirm, .btn-primary, .btn-ghost')
+      ).filter(el => {
+        // Only include elements that are visible and within the change password modal
+        const parent = el.closest('[role="dialog"]');
+        return parent && parent.getAttribute('aria-labelledby') === 'change-password-title';
+      }) as HTMLElement[];
+
+      if (focusableElements.length === 0) return;
+
+      const firstElement = focusableElements[0];
+      const lastElement = focusableElements[focusableElements.length - 1];
+
+      // Shift+Tab on first element: go to last element
+      if (e.shiftKey && document.activeElement === firstElement) {
+        e.preventDefault();
+        lastElement.focus();
+      }
+      // Tab on last element: go to first element
+      else if (!e.shiftKey && document.activeElement === lastElement) {
+        e.preventDefault();
+        firstElement.focus();
+      }
+    }
+
+    document.addEventListener('keydown', handleTab);
+
+    return () => {
+      document.removeEventListener('keydown', handleTab);
+      // Restore focus to the trigger element when modal closes
+      if (triggerElement && triggerElement.focus) {
+        setTimeout(() => triggerElement.focus(), 50);
+      }
+    };
   }, [showChangePw]);
 
   // ── Keyboard Navigation: Esc key closes Mobile menu ──
@@ -4960,7 +5093,6 @@ export default function TournamentApp() {
                 value={loginUser}
                 onChange={e => setLoginUser(e.target.value)}
                 onKeyDown={e => e.key === 'Enter' && handleLogin()}
-                autoFocus
                 autoComplete="username"
                 aria-label="Username"
               />
