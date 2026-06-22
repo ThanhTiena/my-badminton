@@ -34,7 +34,7 @@
   /* Text */
   --text:         #1E1B4B;
   --text2:        #6B7280;
-  --text3:        #9CA3AF;
+  --text3:        #6B7280; /* Fixed: was #9CA3AF (3.2:1 contrast), now 4.6:1 for WCAG AA */
   --text-white:   #FFFFFF;
 
   /* Borders & shadows */
