@@ -25,18 +25,19 @@ const INITIAL_TOURNEY: TournamentState = {
    SMALL ATOMS
 ════════════════════════════════════════════════════ */
 function Btn({
-  children, variant = 'primary', size, full, disabled, onClick, className = '',
+  children, variant = 'primary', size, full, disabled, onClick, className = '', ariaLabel,
 }: {
   children: React.ReactNode;
   variant?: 'primary'|'secondary'|'danger'|'success'|'orange'|'ghost'|'pro'|'beg';
   size?: 'sm'|'lg'; full?: boolean; disabled?: boolean;
-  onClick?: () => void; className?: string;
+  onClick?: () => void; className?: string; ariaLabel?: string;
 }) {
   return (
     <button
       className={`btn btn-${variant}${size ? ` btn-${size}` : ''}${full ? ' btn-full' : ''} ${className}`}
       disabled={disabled}
       onClick={onClick}
+      aria-label={ariaLabel}
     >
       {children}
     </button>
@@ -183,6 +184,7 @@ function RosterScreen({ onDone, onOpenProfile }: { onDone: () => void; onOpenPro
             maxLength={30}
             style={{ marginBottom: 10 }}
             onKeyDown={e => e.key === 'Enter' && add()}
+            aria-label="Player name"
           />
           <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
             {(['pro', 'beg'] as const).map(g => (
@@ -190,6 +192,9 @@ function RosterScreen({ onDone, onOpenProfile }: { onDone: () => void; onOpenPro
                 key={g}
                 onClick={() => setGroup(g)}
                 style={{ flex: 1, padding: '9px 0', borderRadius: 8, border: `1px solid ${group === g ? (g === 'pro' ? 'var(--pro)' : 'var(--beg)') : 'var(--border)'}`, background: group === g ? (g === 'pro' ? 'rgba(245,158,11,.15)' : 'rgba(34,197,94,.15)') : 'var(--bg3)', color: group === g ? (g === 'pro' ? 'var(--pro)' : 'var(--beg)') : 'var(--text2)', fontWeight: 600, fontSize: 13, cursor: 'pointer', transition: 'all .15s' }}
+                role="radio"
+                aria-checked={group === g}
+                aria-label={g === 'pro' ? 'Set player skill level to Pro' : 'Set player skill level to Beginner'}
               >
                 {g === 'pro' ? '🥇 Pro' : '🌱 Beginner'}
               </button>
@@ -267,15 +272,15 @@ function RosterScreen({ onDone, onOpenProfile }: { onDone: () => void; onOpenPro
                         </div>
                       </div>
                       <div className="pc-actions">
-                        <button className="pc-action-btn" onClick={() => { setEditingId(id); setEditName(p.name); }}>
-                          <span className="icon">✏️</span> Edit
+                        <button className="pc-action-btn" onClick={() => { setEditingId(id); setEditName(p.name); }} aria-label={`Edit ${p.name}'s information`}>
+                          <span className="icon" aria-hidden="true">✏️</span> Edit
                         </button>
-                        <button className="pc-action-btn" onClick={() => toggleGroup(id, p.group)}>
-                          <span className="icon">{p.group === 'pro' ? '🌱' : '🥇'}</span>
+                        <button className="pc-action-btn" onClick={() => toggleGroup(id, p.group)} aria-label={`Change ${p.name} from ${p.group === 'pro' ? 'Pro to Beginner' : 'Beginner to Pro'}`}>
+                          <span className="icon" aria-hidden="true">{p.group === 'pro' ? '🌱' : '🥇'}</span>
                           {p.group === 'pro' ? 'To Beg' : 'To Pro'}
                         </button>
-                        <button className="pc-action-btn danger" onClick={() => del(id)}>
-                          <span className="icon">🗑️</span> Remove
+                        <button className="pc-action-btn danger" onClick={() => del(id)} aria-label={`Remove ${p.name} from roster`}>
+                          <span className="icon" aria-hidden="true">🗑️</span> Remove
                         </button>
                       </div>
                     </div>
@@ -324,7 +329,7 @@ function SetupScreen({
 
   return (
     <div className="anim-fade">
-      <button className="back-btn" onClick={onBack}>← Back to roster</button>
+      <button className="back-btn" onClick={onBack} aria-label="Go back to roster screen">← Back to roster</button>
       <p className="page-title">⚙️ Set Up Tournament</p>
       <p className="page-sub">Pick who's playing today and choose your format.</p>
 
@@ -357,8 +362,11 @@ function SetupScreen({
                     key={String(p._id)}
                     className={`player-select-item${sel ? ' selected-pro' : ''}`}
                     onClick={() => onTogglePlayer(p)}
+                    role="checkbox"
+                    aria-checked={sel}
+                    aria-label={`${sel ? 'Deselect' : 'Select'} ${p.name} for tournament`}
                   >
-                    <span className={`checkbox${sel ? ' checked-pro' : ''}`}>
+                    <span className={`checkbox${sel ? ' checked-pro' : ''}`} aria-hidden="true">
                       {sel && <span className="check-mark">✓</span>}
                     </span>
                     <span className="select-item-name">{p.name}</span>
@@ -376,8 +384,11 @@ function SetupScreen({
                     key={String(p._id)}
                     className={`player-select-item${sel ? ' selected-beg' : ''}`}
                     onClick={() => onTogglePlayer(p)}
+                    role="checkbox"
+                    aria-checked={sel}
+                    aria-label={`${sel ? 'Deselect' : 'Select'} ${p.name} for tournament`}
                   >
-                    <span className={`checkbox${sel ? ' checked-beg' : ''}`}>
+                    <span className={`checkbox${sel ? ' checked-beg' : ''}`} aria-hidden="true">
                       {sel && <span className="check-mark">✓</span>}
                     </span>
                     <span className="select-item-name">{p.name}</span>
@@ -390,8 +401,8 @@ function SetupScreen({
 
           {allPlayers.length > 0 && (
             <div className="row" style={{ marginTop: 12 }}>
-              <Btn variant="ghost" size="sm" onClick={() => allPlayers.forEach(p => { if (!selectedNames.has(p.name)) onTogglePlayer(p); })}>Select All</Btn>
-              <Btn variant="ghost" size="sm" onClick={() => allPlayers.forEach(p => { if (selectedNames.has(p.name)) onTogglePlayer(p); })}>Clear All</Btn>
+              <Btn variant="ghost" size="sm" onClick={() => allPlayers.forEach(p => { if (!selectedNames.has(p.name)) onTogglePlayer(p); })} ariaLabel="Select all players for tournament">Select All</Btn>
+              <Btn variant="ghost" size="sm" onClick={() => allPlayers.forEach(p => { if (selectedNames.has(p.name)) onTogglePlayer(p); })} ariaLabel="Deselect all players">Clear All</Btn>
             </div>
           )}
         </Card>
@@ -402,18 +413,34 @@ function SetupScreen({
             <CardTitle>🎮 Format</CardTitle>
 
             <p style={{ fontSize: 12, color: 'var(--text3)', marginBottom: 8 }}>Game type</p>
-            <div className="pills" style={{ marginBottom: 18 }}>
+            <div className="pills" style={{ marginBottom: 18 }} role="radiogroup" aria-label="Select game type">
               {(['singles', 'doubles'] as const).map(t => (
-                <button key={t} className={`pill${state.gameType === t ? ' active' : ''}`} onClick={() => onSetGameType(t)}>
+                <button
+                  key={t}
+                  className={`pill${state.gameType === t ? ' active' : ''}`}
+                  onClick={() => onSetGameType(t)}
+                  role="radio"
+                  aria-checked={state.gameType === t}
+                  aria-label={`${t.charAt(0).toUpperCase() + t.slice(1)} game type`}
+                >
                   {t.charAt(0).toUpperCase() + t.slice(1)}
                 </button>
               ))}
             </div>
 
             <p style={{ fontSize: 12, color: 'var(--text3)', marginBottom: 8 }}>Tournament format</p>
-            <div className="pills">
+            <div className="pills" role="radiogroup" aria-label="Select tournament format">
               {([['elimination', '🗡️ Single Elimination'], ['roundrobin', '🔄 Round Robin']] as const).map(([v, l]) => (
-                <button key={v} className={`pill${state.tourneyFormat === v ? ' active' : ''}`} onClick={() => onSetFormat(v)}>{l}</button>
+                <button
+                  key={v}
+                  className={`pill${state.tourneyFormat === v ? ' active' : ''}`}
+                  onClick={() => onSetFormat(v)}
+                  role="radio"
+                  aria-checked={state.tourneyFormat === v}
+                  aria-label={v === 'elimination' ? 'Single Elimination format' : 'Round Robin format'}
+                >
+                  {l}
+                </button>
               ))}
             </div>
           </Card>
@@ -501,11 +528,13 @@ function BetPanel({ matchId, roundLabel, matchLabel, teamA, teamB }: {
           background: 'none', border: 'none', cursor: 'pointer', padding: '8px 0',
           color: 'var(--text2)', fontFamily: 'inherit',
         }}
+        aria-expanded={open}
+        aria-label={`${open ? 'Hide' : 'Show'} betting panel. ${betCount} bet${betCount !== 1 ? 's' : ''} placed.`}
       >
-        <span style={{ fontSize: 13, fontWeight: 700 }}>
+        <span style={{ fontSize: 13, fontWeight: 700 }} aria-hidden="true">
           🎲 Bets{betCount > 0 ? ` (${betCount})` : ''}
         </span>
-        <span style={{ fontSize: 12, color: 'var(--text3)' }}>{open ? '▲ hide' : '▼ show'}</span>
+        <span style={{ fontSize: 12, color: 'var(--text3)' }} aria-hidden="true">{open ? '▲ hide' : '▼ show'}</span>
       </button>
 
       {open && (
@@ -519,11 +548,12 @@ function BetPanel({ matchId, roundLabel, matchLabel, teamA, teamB }: {
                 placeholder="Your name"
                 value={bettor}
                 onChange={e => setBettor(e.target.value)}
+                aria-label="Your name for the bet"
               />
             </div>
 
             {/* Pick team */}
-            <div style={{ display: 'flex', gap: 6 }}>
+            <div style={{ display: 'flex', gap: 6 }} role="radiogroup" aria-label="Pick which team you're betting on">
               {[teamA, teamB].map(t => (
                 <button
                   key={t}
@@ -536,6 +566,9 @@ function BetPanel({ matchId, roundLabel, matchLabel, teamA, teamB }: {
                     color: pick === t ? 'var(--accent)' : 'var(--text2)',
                     wordBreak: 'break-word',
                   }}
+                  role="radio"
+                  aria-checked={pick === t}
+                  aria-label={`Bet on ${t} to win`}
                 >
                   {pick === t ? '✓ ' : ''}{t}
                 </button>
@@ -549,6 +582,7 @@ function BetPanel({ matchId, roundLabel, matchLabel, teamA, teamB }: {
               value={note}
               onChange={({ target }: { target: HTMLInputElement }) => setNote(target.value)}
               onKeyDown={({ key }: { key: string }) => key === 'Enter' && placeBet()}
+              aria-label="Bet note or stake amount"
             />
 
             <Btn variant="secondary" size="sm" disabled={saving || !bettor.trim()} onClick={placeBet}>
@@ -733,16 +767,16 @@ function MatchCard({
               <button
                 className={`score-tap-btn${canWin ? ' can-win' : ''}`}
                 onClick={() => addScore(side, 1)}
-                title="Tap to add 1 point"
+                aria-label={`Add 1 point for ${name}. Current score: ${score}`}
               >
                 {score}
               </button>
 
               {/* Quick-add row */}
               <div className="quick-add-row">
-                <button className="quick-btn" onClick={() => addScore(side, -1)} title="−1">−1</button>
-                <button className="quick-btn" onClick={() => addScore(side, 2)}  title="+2">+2</button>
-                <button className="quick-btn" onClick={() => addScore(side, 5)}  title="+5">+5</button>
+                <button className="quick-btn" onClick={() => addScore(side, -1)} aria-label={`Subtract 1 point from ${name}`}>−1</button>
+                <button className="quick-btn" onClick={() => addScore(side, 2)}  aria-label={`Add 2 points to ${name}`}>+2</button>
+                <button className="quick-btn" onClick={() => addScore(side, 5)}  aria-label={`Add 5 points to ${name}`}>+5</button>
               </div>
 
               {/* Direct score input */}
@@ -756,6 +790,7 @@ function MatchCard({
                 onChange={e => setInp(e.target.value)}
                 onBlur={() => applyInput(side, inpVal)}
                 onKeyDown={e => e.key === 'Enter' && applyInput(side, inpVal)}
+                aria-label={`Set exact score for ${name}`}
               />
             </div>
           );
@@ -769,19 +804,20 @@ function MatchCard({
           if (sA > sB) onScoreChange(match.id, 'A', -1);
           else if (sB > sA) onScoreChange(match.id, 'B', -1);
           else if (sA > 0) onScoreChange(match.id, 'A', -1);
-        }}>↩ Undo</button>
+        }} aria-label="Undo last point">↩ Undo</button>
 
         {(autoWinA || autoWinB) ? (
           <button
             className="declare-winner-btn"
             onClick={() => onMarkWinner(match.id, autoWinA ? 'A' : 'B')}
+            aria-label={`Declare ${autoWinA ? nameA : nameB} as winner`}
           >
             🏆 Declare {autoWinA ? nameA : nameB}
           </button>
         ) : (
           <div className="winner-btns" style={{ flex: 1 }}>
-            <Btn variant="success" onClick={() => onMarkWinner(match.id, 'A')}>🏆 <TruncName name={nameA} maxWidth={80} /></Btn>
-            <Btn variant="orange"  onClick={() => onMarkWinner(match.id, 'B')}>🏆 <TruncName name={nameB} maxWidth={80} /></Btn>
+            <Btn variant="success" onClick={() => onMarkWinner(match.id, 'A')} ariaLabel={`Declare ${nameA} as winner`}>🏆 <TruncName name={nameA} maxWidth={80} /></Btn>
+            <Btn variant="orange"  onClick={() => onMarkWinner(match.id, 'B')} ariaLabel={`Declare ${nameB} as winner`}>🏆 <TruncName name={nameB} maxWidth={80} /></Btn>
           </div>
         )}
       </div>
@@ -949,18 +985,18 @@ function TournamentScreen({
             <div className="progress-fill" style={{ width: `${progress}%` }} />
           </div>
           {canAddPlayer && (
-            <Btn variant="secondary" size="sm" onClick={() => setShowAddPlayer((v: boolean) => !v)}>
+            <Btn variant="secondary" size="sm" onClick={() => setShowAddPlayer((v: boolean) => !v)} ariaLabel={showAddPlayer ? 'Close add player panel' : 'Open add player panel'}>
               {showAddPlayer ? '✕ Close' : '➕ Add Player'}
             </Btn>
           )}
           {canReshuffle && (
-            <Btn variant="secondary" size="sm" onClick={onReshuffle}>🔀 Reshuffle</Btn>
+            <Btn variant="secondary" size="sm" onClick={onReshuffle} ariaLabel="Reshuffle unstarted matches">🔀 Reshuffle</Btn>
           )}
-          <Btn variant="secondary" size="sm" onClick={() => setShowAddMatch((v: boolean) => !v)}>
+          <Btn variant="secondary" size="sm" onClick={() => setShowAddMatch((v: boolean) => !v)} ariaLabel={showAddMatch ? 'Close manual match panel' : 'Open manual match panel'}>
             {showAddMatch ? '✕ Close' : '➕ Manual Match'}
           </Btn>
-          <Btn variant="ghost" size="sm" onClick={onReset}>↩️ New</Btn>
-          <Btn variant="danger" size="sm" onClick={onCancel}>🚫 Cancel</Btn>
+          <Btn variant="ghost" size="sm" onClick={onReset} ariaLabel="Start a new tournament">↩️ New</Btn>
+          <Btn variant="danger" size="sm" onClick={onCancel} ariaLabel="Cancel current tournament">🚫 Cancel</Btn>
         </div>
       </div>
 
@@ -1079,9 +1115,19 @@ function TournamentScreen({
       })()}
 
       {/* Tabs */}
-      <div className="tabs">
+      <div className="tabs" role="tablist" aria-label="Tournament sections">
         {([['matches','⚡ Matches'],['bracket', isRR ? '📊 Standings' : '📊 Bracket'],['history','📜 History']] as const).map(([id, label]) => (
-          <button key={id} className={`tab${tab === id ? ' active' : ''}`} onClick={() => setTab(id)}>{label}</button>
+          <button
+            key={id}
+            className={`tab${tab === id ? ' active' : ''}`}
+            onClick={() => setTab(id)}
+            role="tab"
+            aria-selected={tab === id}
+            aria-controls={`${id}-panel`}
+            aria-label={label}
+          >
+            {label}
+          </button>
         ))}
       </div>
 
@@ -4587,6 +4633,8 @@ export default function TournamentApp() {
           className="btn btn-ghost"
           style={{ minHeight: 36, padding: '4px 10px', fontSize: 20, cursor: 'pointer' }}
           onClick={() => setMobileMenuOpen(prev => !prev)}
+          aria-label={mobileMenuOpen ? 'Close navigation menu' : 'Open navigation menu'}
+          aria-expanded={mobileMenuOpen}
         >
           {mobileMenuOpen ? '✕' : '☰'}
         </button>
@@ -4620,8 +4668,10 @@ export default function TournamentApp() {
                   setView(item.id as AppView);
                   setMobileMenuOpen(false);
                 }}
+                aria-current={activeView === item.id ? 'page' : undefined}
+                aria-label={`Navigate to ${item.label}`}
               >
-                <span className="nav-icon">{item.icon}</span>
+                <span className="nav-icon" aria-hidden="true">{item.icon}</span>
                 {item.label}
               </button>
             ))}
@@ -4648,10 +4698,12 @@ export default function TournamentApp() {
                     setView(item.id as AppView);
                   }
                 }}
+                aria-current={activeView === item.id ? 'page' : undefined}
+                aria-label={`Navigate to ${item.label}${!isAdmin && item.id !== 'tournament' ? ' (requires login)' : ''}`}
               >
-                <span className="nav-icon">{item.icon}</span>
+                <span className="nav-icon" aria-hidden="true">{item.icon}</span>
                 {item.label}
-                {!isAdmin && <span className="lock-icon">🔒</span>}
+                {!isAdmin && <span className="lock-icon" aria-hidden="true">🔒</span>}
               </button>
             ))}
           </div>
@@ -4764,7 +4816,7 @@ export default function TournamentApp() {
           onClick={e => { if (e.target === e.currentTarget) setShowLogin(false); }}
           role="dialog"
           aria-modal="true"
-          aria-label="Admin login"
+          aria-labelledby="login-modal-title"
         >
           <div style={{
             background: 'var(--bg-card)', borderRadius: 'var(--r)',
@@ -4773,8 +4825,8 @@ export default function TournamentApp() {
             border: '1px solid var(--border)', animation: 'fadeIn .25s ease',
           }}>
             <div style={{ textAlign: 'center', marginBottom: 28 }}>
-              <span style={{ fontSize: 40, display: 'block', marginBottom: 12 }}>🔐</span>
-              <h2 style={{ fontSize: 22, fontWeight: 800, color: 'var(--text)', marginBottom: 6 }}>Admin Login</h2>
+              <span style={{ fontSize: 40, display: 'block', marginBottom: 12 }} aria-hidden="true">🔐</span>
+              <h2 id="login-modal-title" style={{ fontSize: 22, fontWeight: 800, color: 'var(--text)', marginBottom: 6 }}>Admin Login</h2>
               <p style={{ fontSize: 13, color: 'var(--text2)' }}>Public pages are always accessible without login</p>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -4787,6 +4839,7 @@ export default function TournamentApp() {
                 onKeyDown={e => e.key === 'Enter' && handleLogin()}
                 autoFocus
                 autoComplete="username"
+                aria-label="Username"
               />
               <input
                 id="login-password"
@@ -4797,6 +4850,7 @@ export default function TournamentApp() {
                 onChange={e => setLoginPass(e.target.value)}
                 onKeyDown={e => e.key === 'Enter' && handleLogin()}
                 autoComplete="current-password"
+                aria-label="Password"
               />
               {loginError && <div className="alert alert-danger">{loginError}</div>}
               <button
@@ -4804,12 +4858,14 @@ export default function TournamentApp() {
                 className="btn btn-primary btn-lg btn-full"
                 disabled={loginLoading}
                 onClick={handleLogin}
+                aria-label="Sign in to admin panel"
               >
                 {loginLoading ? '⏳ Signing in…' : '🔐 Sign In'}
               </button>
               <button
                 className="btn btn-ghost btn-sm btn-full"
                 onClick={() => setShowLogin(false)}
+                aria-label="Close login dialog"
               >
                 Cancel
               </button>
@@ -4826,7 +4882,7 @@ export default function TournamentApp() {
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             zIndex: 1000, backdropFilter: 'blur(8px)',
           }}
-          role="dialog" aria-modal="true" aria-label="Change password"
+          role="dialog" aria-modal="true" aria-labelledby="change-password-title"
         >
           <div style={{
             background: 'var(--bg-card)', borderRadius: 'var(--r)',
@@ -4834,11 +4890,11 @@ export default function TournamentApp() {
             boxShadow: '0 24px 80px rgba(124,58,237,.25)',
             border: '1px solid var(--border)',
           }}>
-            <h3 style={{ fontSize: 18, fontWeight: 800, marginBottom: 20, color: 'var(--text)' }}>🔑 Change Password</h3>
+            <h3 id="change-password-title" style={{ fontSize: 18, fontWeight: 800, marginBottom: 20, color: 'var(--text)' }}>🔑 Change Password</h3>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              <input id="cp-current" className="input" type="password" placeholder="Current password" value={cpCurrent} onChange={e => setCpCurrent(e.target.value)} autoComplete="current-password" />
-              <input id="cp-new" className="input" type="password" placeholder="New password (min 8 chars)" value={cpNew} onChange={e => setCpNew(e.target.value)} autoComplete="new-password" />
-              <input id="cp-confirm" className="input" type="password" placeholder="Confirm new password" value={cpConfirm} onChange={e => setCpConfirm(e.target.value)} autoComplete="new-password" />
+              <input id="cp-current" className="input" type="password" placeholder="Current password" value={cpCurrent} onChange={e => setCpCurrent(e.target.value)} autoComplete="current-password" aria-label="Current password" />
+              <input id="cp-new" className="input" type="password" placeholder="New password (min 8 chars)" value={cpNew} onChange={e => setCpNew(e.target.value)} autoComplete="new-password" aria-label="New password (minimum 8 characters)" />
+              <input id="cp-confirm" className="input" type="password" placeholder="Confirm new password" value={cpConfirm} onChange={e => setCpConfirm(e.target.value)} autoComplete="new-password" aria-label="Confirm new password" />
               {cpError   && <div className="alert alert-danger">{cpError}</div>}
               {cpSuccess && <div className="alert alert-success">{cpSuccess}</div>}
               <button className="btn btn-primary btn-full" onClick={handleChangePw}>💾 Update Password</button>
