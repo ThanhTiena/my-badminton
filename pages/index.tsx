@@ -335,6 +335,35 @@ function SetupScreen({
       <p className="page-title">⚙️ Set Up Tournament</p>
       <p className="page-sub">Pick who's playing today and choose your format.</p>
 
+      {/* Draft Tournament Banner (will show if tournament has draftMode flag from poll automation) */}
+      <div style={{
+        padding: 16,
+        background: 'linear-gradient(135deg, rgba(245,158,11,.15) 0%, rgba(245,158,11,.05) 100%)',
+        border: '1px solid rgba(245,158,11,.3)',
+        borderRadius: 12,
+        marginBottom: 16,
+        display: 'none', // Hidden by default, shown via inline style if draft
+      }} className="draft-tournament-banner">
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+          <span style={{
+            padding: '4px 10px',
+            borderRadius: 6,
+            background: 'rgba(245,158,11,.25)',
+            color: 'var(--accent)',
+            fontSize: 11,
+            fontWeight: 700,
+          }}>
+            DRAFT TOURNAMENT
+          </span>
+          <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--accent)' }}>
+            🤖 Auto-created from poll
+          </span>
+        </div>
+        <p style={{ fontSize: 13, color: 'var(--text2)', margin: 0 }}>
+          This tournament was automatically created from confirmed poll responses. Review the player list, configure teams, and start when ready!
+        </p>
+      </div>
+
       <div className="two-col">
         {/* Player selection */}
         <Card>
