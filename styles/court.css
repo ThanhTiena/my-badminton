@@ -1,0 +1,111 @@
+/* ============================================================
+   COURT — Component overrides
+   Load this AFTER styles/globals.css (e.g. import it last in
+   pages/_app.tsx). It redefines the class names your app
+   already uses, so the existing markup adopts the Court look
+   with zero JSX changes. Migrate components to the React
+   primitives in /components when you want, then delete what
+   you no longer need here.
+
+   Requires tokens.css (the variables above).
+   Fonts: add Archivo + Space Mono (see README).
+   ============================================================ */
+
+body {
+  font-family: var(--font-display);
+  background: var(--paper);
+  color: var(--ink);
+}
+
+/* Kill the decorative blobs entirely */
+.blob-decoration, .blob-1, .blob-2, .blob-3 { display: none !important; }
+
+/* ---- Page headers: no gradient text ---- */
+.page-title {
+  font-family: var(--font-display);
+  font-weight: 800;
+  letter-spacing: -1px;
+  color: var(--ink);
+  background: none;
+  -webkit-text-fill-color: currentColor;
+}
+.page-sub { color: var(--muted); font-weight: 500; }
+
+/* ---- Cards: flat, bordered, sharp ---- */
+.card {
+  background: var(--card);
+  border: var(--border);
+  border-radius: var(--r);
+  box-shadow: none;
+}
+.card-gradient-top::before { display: none; }
+.card-title {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-weight: 700;
+}
+
+/* ---- Buttons ---- */
+.btn { border-radius: var(--r); font-family: var(--font-display); font-weight: 700; }
+.btn-primary {            /* primary = ink, no gradient/glow */
+  background: var(--ink);
+  color: #fff;
+  box-shadow: none;
+}
+.btn-primary:hover { filter: none; background: #000; box-shadow: none; }
+.btn-volt {               /* NEW: the one hero action per screen */
+  background: var(--volt);
+  color: var(--ink);
+}
+.btn-secondary, .btn-ghost {
+  background: transparent;
+  color: var(--ink);
+  border: 1.5px solid var(--ink);
+}
+.btn-secondary:hover, .btn-ghost:hover { background: var(--ink); color: #fff; }
+.btn-success { background: var(--win); }
+.btn-danger  { background: transparent; color: var(--loss); border: 1.5px solid var(--loss); }
+.btn-danger:hover { background: var(--loss); color: #fff; }
+.btn-orange  { background: var(--caution); }
+
+/* ---- Inputs ---- */
+.input {
+  background: var(--card);
+  border: 1.5px solid var(--line-strong);
+  border-radius: var(--r);
+}
+.input:focus { border-color: var(--ink); box-shadow: 0 0 0 3px rgba(22,23,15,.12); }
+
+/* ---- Badges: ink fill / outline, no pills ---- */
+.badge { border-radius: var(--r-sm); font-family: var(--font-mono); letter-spacing: 1px; }
+.badge-pro { background: var(--ink); color: var(--volt); border: none; }
+.badge-beg { background: transparent; color: var(--ink); border: 1.5px solid var(--ink); }
+
+/* ---- Sidebar nav: dark, grouped, volt active bar ---- */
+.sidebar { background: var(--ink); border-right: none; box-shadow: none; }
+.nav-section-label { font-family: var(--font-mono); color: var(--volt); letter-spacing: 2px; }
+.nav-link { color: var(--muted-2); border-radius: 0; }
+.nav-link.active {
+  background: #23241B;
+  color: var(--paper);
+  box-shadow: inset 4px 0 0 var(--volt);   /* volt left bar */
+}
+
+/* ---- Tables ---- */
+.standings-table th {
+  font-family: var(--font-mono);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--muted);
+}
+.standings-table td { font-variant-numeric: tabular-nums; }
+
+/* ---- Tabs ---- */
+.tabs { background: var(--card); border: var(--border); border-radius: var(--r); }
+.tab.active { background: var(--ink); color: #fff; border-radius: var(--r-sm); }
+
+/* ---- Focus ring ---- */
+*:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }

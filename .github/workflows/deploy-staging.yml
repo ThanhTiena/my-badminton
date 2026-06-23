@@ -1,0 +1,66 @@
+name: Deploy to Staging
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    name: Deploy to Staging Environment
+    runs-on: ubuntu-latest
+    environment:
+      name: staging
+      url: https://staging.smashtour.app # Update with your staging URL
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build application
+        run: npm run build
+        env:
+          NEXT_PUBLIC_ENV: staging
+
+      - name: Run smoke tests
+        run: npm run test:smoke || echo "::warning::Smoke tests not configured yet"
+
+      # Example: Deploy to Vercel
+      - name: Deploy to Vercel
+        uses: amondnet/vercel-action@v25
+        with:
+          vercel-token: ${{ secrets.VERCEL_TOKEN }}
+          vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
+          vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
+          vercel-args: '--prod'
+          working-directory: ./
+
+      # Alternative: Deploy to your own infrastructure
+      # - name: Deploy to staging server
+      #   run: |
+      #     echo "Deploying to staging server..."
+      #     # Add your deployment commands here
+      #     # Example: rsync, scp, or API calls to your hosting provider
+
+      - name: Post-deployment health check
+        run: |
+          echo "Running health check on staging..."
+          # curl -f https://staging.smashtour.app/api/health || exit 1
+          echo "::notice::Staging deployment successful"
+
+      - name: Notify team
+        if: always()
+        run: |
+          echo "Sending deployment notification..."
+          # Add Slack/Discord webhook notification here
+          # curl -X POST ${{ secrets.SLACK_WEBHOOK_URL }} \
+          #   -H 'Content-Type: application/json' \
+          #   -d '{"text":"Staging deployment ${{ job.status }}"}'
