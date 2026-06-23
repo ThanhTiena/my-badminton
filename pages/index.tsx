@@ -5550,6 +5550,7 @@ export default function TournamentApp() {
   const [showRoundBanner, setShowRoundBanner] = useState(false);
   const [confettiActive,  setConfettiActive]  = useState(false);
   const [appLoading,      setAppLoading]      = useState(true);   // true while restoring from DB
+  const [userRole,        setUserRole]        = useState<'host' | 'player'>('host');
 
   // ── Top-level auth state (shared with sidebar + PaymentScreen) ──
   const [isAdmin,       setIsAdmin]       = useState(false);
@@ -5572,6 +5573,29 @@ export default function TournamentApp() {
       setAuthChecked(true);
     }).catch(() => setAuthChecked(true));
   }, []);
+
+  // ── User Role persistence: load from localStorage on mount ──
+  useEffect(() => {
+    const savedRole = localStorage.getItem('smashtour_user_role');
+    if (savedRole === 'host' || savedRole === 'player') {
+      setUserRole(savedRole);
+    }
+  }, []);
+
+  // ── User Role persistence: save to localStorage when changed ──
+  useEffect(() => {
+    localStorage.setItem('smashtour_user_role', userRole);
+  }, [userRole]);
+
+  // ── Redirect logic: if player switches to Player mode while on Host-only page ──
+  useEffect(() => {
+    if (userRole === 'player') {
+      const hostOnlyPages: AppView[] = ['roster', 'payment', 'pricing'];
+      if (hostOnlyPages.includes(view)) {
+        setView('rankings');
+      }
+    }
+  }, [userRole, view]);
 
   // ── Keyboard Navigation: Esc key closes Login modal ──
   useEffect(() => {
@@ -6123,22 +6147,50 @@ export default function TournamentApp() {
     );
   }
 
-  // Nav items definition
-  const navPublic = [
-    { id: 'rankings',    icon: '🏅', label: 'Rankings'   },
-    { id: 'history',     icon: '📜', label: 'History'    },
-    { id: 'bets',        icon: '🎲', label: 'Bets'       },
-    { id: 'payment',     icon: '💰', label: 'Payments'   },
-    { id: 'attendance',  icon: '✋', label: 'Attendance'  },
-    { id: 'training',    icon: '🏸', label: 'Training'   },
+  // ── New grouped navigation structure ──
+  type NavItem = { id: AppView; icon: string; label: string; hostOnly?: boolean };
+  type NavGroup = { label: string; items: NavItem[] };
+
+  const navigationGroups: NavGroup[] = [
+    {
+      label: 'PLAY',
+      items: [
+        { id: 'tournament', icon: '🏆', label: 'Tournament', hostOnly: true },
+        { id: 'tournament', icon: '📊', label: 'Live Scoring' },  // Player sees this as "Live Scoring"
+        { id: 'attendance', icon: '✋', label: 'Attendance' },
+      ],
+    },
+    {
+      label: 'CLUB',
+      items: [
+        { id: 'roster',    icon: '👥', label: 'Players', hostOnly: true },
+        { id: 'rankings',  icon: '🏅', label: 'Rankings' },
+        { id: 'history',   icon: '📜', label: 'History' },
+      ],
+    },
+    {
+      label: 'MONEY',
+      items: [
+        { id: 'payment', icon: '💰', label: 'Payments', hostOnly: true },
+        { id: 'pricing', icon: '💵', label: 'Pricing', hostOnly: true },
+      ],
+    },
+    {
+      label: 'TRAIN',
+      items: [
+        { id: 'training', icon: '🏸', label: 'Training' },
+      ],
+    },
   ];
-  const navAdmin = [
-    { id: 'roster',     icon: '👥', label: 'Players'    },
-    { id: 'tournament', icon: '🏆', label: 'Tournament'  },
-    { id: 'analytics',  icon: '📊', label: 'Analytics'   },
-    { id: 'venues',     icon: '🏢', label: 'Venues'      },
-    { id: 'pricing',    icon: '💵', label: 'Pricing'     },
-  ];
+
+  // ── Filter nav items based on user role ──
+  const visibleGroups = navigationGroups.map(group => ({
+    ...group,
+    items: group.items.filter(item => {
+      if (userRole === 'player' && item.hostOnly) return false;
+      return true;
+    }),
+  })).filter(group => group.items.length > 0);
 
   const activeView = view === 'setup' || view === 'champion' ? 'tournament' : view;
 
@@ -6180,55 +6232,92 @@ export default function TournamentApp() {
             </div>
           </a>
 
+          {/* ── Role Toggle ── */}
+          <div style={{
+            display: 'flex',
+            gap: '4px',
+            padding: '0 12px 16px',
+            borderBottom: '1px solid var(--line-strong)',
+            marginBottom: '16px',
+          }}>
+            <button
+              onClick={() => setUserRole('host')}
+              style={{
+                flex: 1,
+                padding: '8px 12px',
+                fontSize: '13px',
+                fontWeight: 700,
+                fontFamily: 'var(--font-display)',
+                background: userRole === 'host' ? 'var(--volt)' : 'transparent',
+                color: userRole === 'host' ? 'var(--ink)' : 'var(--muted-2)',
+                border: userRole === 'host' ? 'none' : '1.5px solid var(--line-strong)',
+                borderRadius: 'var(--r-sm)',
+                cursor: 'pointer',
+                transition: 'all 0.2s',
+              }}
+            >
+              Host
+            </button>
+            <button
+              onClick={() => setUserRole('player')}
+              style={{
+                flex: 1,
+                padding: '8px 12px',
+                fontSize: '13px',
+                fontWeight: 700,
+                fontFamily: 'var(--font-display)',
+                background: userRole === 'player' ? 'var(--volt)' : 'transparent',
+                color: userRole === 'player' ? 'var(--ink)' : 'var(--muted-2)',
+                border: userRole === 'player' ? 'none' : '1.5px solid var(--line-strong)',
+                borderRadius: 'var(--r-sm)',
+                cursor: 'pointer',
+                transition: 'all 0.2s',
+              }}
+            >
+              Player
+            </button>
+          </div>
+
           <div className="sidebar-nav">
-            {/* Public pages */}
-            <p className="nav-section-label">Public</p>
-            {navPublic.map(item => (
-              <button
-                key={item.id}
-                id={`nav-${item.id}`}
-                className={`nav-link${activeView === item.id ? ' active' : ''}`}
-                onClick={() => {
-                  setView(item.id as AppView);
-                  setMobileMenuOpen(false);
-                }}
-                aria-current={activeView === item.id ? 'page' : undefined}
-                aria-label={`Navigate to ${item.label}`}
-              >
-                <span className="nav-icon" aria-hidden="true">{item.icon}</span>
-                {item.label}
-              </button>
-            ))}
-
-            <div className="nav-divider" />
-
-            {/* Admin pages */}
-            <p className="nav-section-label">Admin</p>
-            {navAdmin.map(item => (
-              <button
-                key={item.id}
-                id={`nav-${item.id}`}
-                className={`nav-link${activeView === item.id ? ' active' : ''}`}
-                onClick={() => {
-                  if (!isAdmin && item.id !== 'tournament') {
-                    setShowLogin(true);
-                    setMobileMenuOpen(false);
-                    return;
-                  }
-                  setMobileMenuOpen(false);
-                  if (item.id === 'tournament') {
-                    setView(tourney.rounds.length > 0 ? (tourney.champion ? 'champion' : 'tournament') : 'roster');
-                  } else {
-                    setView(item.id as AppView);
-                  }
-                }}
-                aria-current={activeView === item.id ? 'page' : undefined}
-                aria-label={`Navigate to ${item.label}${!isAdmin && item.id !== 'tournament' ? ' (requires login)' : ''}`}
-              >
-                <span className="nav-icon" aria-hidden="true">{item.icon}</span>
-                {item.label}
-                {!isAdmin && <span className="lock-icon" aria-hidden="true">🔒</span>}
-              </button>
+            {visibleGroups.map((group, groupIdx) => (
+              <div key={group.label}>
+                <p className="nav-section-label" style={{
+                  fontFamily: 'var(--font-mono)',
+                  fontSize: '11px',
+                  letterSpacing: '2px',
+                  color: 'var(--volt)',
+                }}>
+                  {group.label}
+                </p>
+                {group.items.map((item) => (
+                  <button
+                    key={`${group.label}-${item.id}-${item.label}`}
+                    id={`nav-${item.id}`}
+                    className={`nav-link${activeView === item.id ? ' active' : ''}`}
+                    onClick={() => {
+                      setView(item.id);
+                      setMobileMenuOpen(false);
+                    }}
+                    aria-current={activeView === item.id ? 'page' : undefined}
+                    aria-label={`Navigate to ${item.label}`}
+                    style={{
+                      fontFamily: 'var(--font-display)',
+                      fontSize: '15px',
+                      fontWeight: 600,
+                      color: activeView === item.id ? 'var(--paper)' : 'var(--muted-2)',
+                      background: activeView === item.id ? '#2A2B23' : 'transparent',
+                      borderRadius: 0,
+                      boxShadow: activeView === item.id ? 'inset 5px 0 0 var(--volt)' : 'none',
+                    }}
+                  >
+                    <span className="nav-icon" aria-hidden="true">{item.icon}</span>
+                    {item.label}
+                  </button>
+                ))}
+                {groupIdx < visibleGroups.length - 1 && (
+                  <div className="nav-divider" style={{ margin: '12px 0' }} />
+                )}
+              </div>
             ))}
           </div>
 
