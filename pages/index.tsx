@@ -12,6 +12,9 @@ import type { PlayerDoc, TournamentHistoryDoc, CourtSessionDoc, PaymentConfigDoc
 import { calculateCourtSuggestion } from '@/lib/polls';
 import { parseImportText, formatVND } from '@/lib/payment';
 import { Skeleton, SkeletonCard } from '@/components/ui/SkeletonLoader';
+import Scoreboard, { isWinner as isBadmintonWinner } from '@/components/Scoreboard';
+// Court Design System Components (Step 2: Primitive Components)
+// import { Button, Badge, PlayerTile, StatCard } from '@/components';
 
 type AppView = 'roster' | 'setup' | 'tournament' | 'champion' | 'history' | 'rankings' | 'payment' | 'bets' | 'analytics' | 'venues' | 'pricing' | 'attendance' | 'training';
 
@@ -667,14 +670,6 @@ function getBadmintonStatus(a: number, b: number): { canWinA: boolean; canWinB: 
   return { canWinA, canWinB, isDeuce, isGamePt };
 }
 
-function isBadmintonWinner(a: number, b: number, side: 'A' | 'B'): boolean {
-  const s = side === 'A' ? a : b;
-  const o = side === 'A' ? b : a;
-  if (s >= 30) return true;           // cap
-  if (s >= 21 && s - o >= 2) return true;  // normal win or post-deuce
-  return false;
-}
-
 /* ════════════════════════════════════════════════════
    MATCH CARD  — handles both live & completed states
 ════════════════════════════════════════════════════ */
@@ -685,8 +680,6 @@ function MatchCard({
   onScoreChange: (id: string, t: 'A'|'B', d: number) => void;
   onMarkWinner: (id: string, s: 'A'|'B') => void;
 }) {
-  const [inputA, setInputA] = useState('');
-  const [inputB, setInputB] = useState('');
 
   if (match.bye) {
     return (
@@ -739,117 +732,76 @@ function MatchCard({
 
   const sA = match.scoreA;
   const sB = match.scoreB;
-  const { canWinA, canWinB, isDeuce, isGamePt } = getBadmintonStatus(sA, sB);
-  const leadA = sA > sB;
-  const leadB = sB > sA;
 
-  const addScore = (side: 'A' | 'B', delta: number) => {
-    const cur = side === 'A' ? sA : sB;
-    const next = Math.max(0, Math.min(30, cur + delta));
-    const diff = next - cur;
-    if (diff !== 0) onScoreChange(match.id, side, diff);
+  const addScore = (side: 'A' | 'B') => {
+    onScoreChange(match.id, side, 1);
   };
-
-  const applyInput = (side: 'A' | 'B', raw: string) => {
-    const v = parseInt(raw, 10);
-    if (isNaN(v)) return;
-    const clamped = Math.max(0, Math.min(30, v));
-    const cur = side === 'A' ? sA : sB;
-    const diff = clamped - cur;
-    if (diff !== 0) onScoreChange(match.id, side, diff);
-    if (side === 'A') setInputA(''); else setInputB('');
-  };
-
-  const autoWinA = isBadmintonWinner(sA, sB, 'A');
-  const autoWinB = isBadmintonWinner(sA, sB, 'B');
 
   return (
     <div className="match-card">
-      <p className="match-status">⚡ LIVE · {roundLabel}</p>
-
-      {/* Badge row */}
-      {(isGamePt || isDeuce) && (
-        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 8 }}>
-          {isDeuce && !isGamePt && <span className="score-badge deuce">DEUCE</span>}
-          {isGamePt && <span className="score-badge game-pt">GAME POINT</span>}
-        </div>
-      )}
-
-      {/* Scoreboard — two tappable sides */}
-      <div className="scoreboard">
-        {(['A', 'B'] as const).map(side => {
-          const score  = side === 'A' ? sA : sB;
-          const name   = side === 'A' ? nameA : nameB;
-          const players = side === 'A' ? match.teamA.players : match.teamB!.players;
-          const lead   = side === 'A' ? leadA : leadB;
-          const canWin = side === 'A' ? canWinA : canWinB;
-          const inpVal = side === 'A' ? inputA : inputB;
-          const setInp = side === 'A' ? setInputA : setInputB;
-
-          return (
-            <div key={side} className={`score-side${lead ? ' winning' : ''}`}>
-              {/* Team name */}
-              <TruncName name={name} maxWidth={120} className="match-team-name" />
-              {gameType === 'doubles' && (
-                <TruncName name={players.join(' & ')} maxWidth={130} className="match-team-sub" style={{ display: 'block', marginBottom: 4 } as React.CSSProperties} />
-              )}
-
-              {/* Large tap button */}
-              <button
-                className={`score-tap-btn${canWin ? ' can-win' : ''}`}
-                onClick={() => addScore(side, 1)}
-                aria-label={`Add 1 point for ${name}. Current score: ${score}`}
-              >
-                {score}
-              </button>
-
-              {/* Quick-add row */}
-              <div className="quick-add-row">
-                <button className="quick-btn" onClick={() => addScore(side, -1)} aria-label={`Subtract 1 point from ${name}`}>−1</button>
-                <button className="quick-btn" onClick={() => addScore(side, 2)}  aria-label={`Add 2 points to ${name}`}>+2</button>
-                <button className="quick-btn" onClick={() => addScore(side, 5)}  aria-label={`Add 5 points to ${name}`}>+5</button>
-              </div>
-
-              {/* Direct score input */}
-              <input
-                className="score-input"
-                type="number"
-                min={0}
-                max={30}
-                placeholder="set"
-                value={inpVal}
-                onChange={e => setInp(e.target.value)}
-                onBlur={() => applyInput(side, inpVal)}
-                onKeyDown={e => e.key === 'Enter' && applyInput(side, inpVal)}
-                aria-label={`Set exact score for ${name}`}
-              />
-            </div>
-          );
-        })}
-      </div>
-
-      {/* Undo + declare winner row */}
-      <div className="score-meta-row">
-        <button className="undo-btn" onClick={() => {
-          // Undo: subtract 1 from whichever side scored last (higher score, else A)
-          if (sA > sB) onScoreChange(match.id, 'A', -1);
-          else if (sB > sA) onScoreChange(match.id, 'B', -1);
-          else if (sA > 0) onScoreChange(match.id, 'A', -1);
-        }} aria-label="Undo last point">↩ Undo</button>
-
-        {(autoWinA || autoWinB) ? (
-          <button
-            className="declare-winner-btn"
-            onClick={() => onMarkWinner(match.id, autoWinA ? 'A' : 'B')}
-            aria-label={`Declare ${autoWinA ? nameA : nameB} as winner`}
+      {/* Broadcast Scoreboard */}
+      <Scoreboard
+        teamA={{ name: nameA, players: match.teamA.players }}
+        teamB={{ name: nameB, players: match.teamB!.players }}
+        scoreA={sA}
+        scoreB={sB}
+        onScoreA={() => addScore('A')}
+        onScoreB={() => addScore('B')}
+        onDeclareWinner={(side) => onMarkWinner(match.id, side)}
+        gameType={gameType}
+        meta={
+          <p
+            style={{
+              fontFamily: 'var(--font-mono)',
+              fontSize: '11px',
+              fontWeight: 700,
+              letterSpacing: '1px',
+              textTransform: 'uppercase',
+              color: 'var(--volt)',
+              margin: 0,
+            }}
           >
-            🏆 Declare {autoWinA ? nameA : nameB}
-          </button>
-        ) : (
-          <div className="winner-btns" style={{ flex: 1 }}>
-            <Btn variant="success" onClick={() => onMarkWinner(match.id, 'A')} ariaLabel={`Declare ${nameA} as winner`}>🏆 <TruncName name={nameA} maxWidth={80} /></Btn>
-            <Btn variant="orange"  onClick={() => onMarkWinner(match.id, 'B')} ariaLabel={`Declare ${nameB} as winner`}>🏆 <TruncName name={nameB} maxWidth={80} /></Btn>
-          </div>
+            ⚡ LIVE · {roundLabel}
+          </p>
+        }
+      />
+
+      {/* Undo button + manual declare */}
+      <div style={{ display: 'flex', gap: '12px', marginTop: '12px' }}>
+        <button
+          className="btn btn-secondary"
+          style={{ flex: '0 0 auto', fontSize: '14px', padding: '8px 16px' }}
+          onClick={() => {
+            // Undo: subtract 1 from whichever side scored last (higher score, else A)
+            if (sA > sB) onScoreChange(match.id, 'A', -1);
+            else if (sB > sA) onScoreChange(match.id, 'B', -1);
+            else if (sA > 0) onScoreChange(match.id, 'A', -1);
+          }}
+          aria-label="Undo last point"
+        >
+          ↩ Undo
+        </button>
+
+        {/* Manual declare buttons (for edge cases) */}
+        {!isBadmintonWinner(sA, sB) && !isBadmintonWinner(sB, sA) && (
+          <>
+            <Btn
+              variant="ghost"
+              size="sm"
+              onClick={() => onMarkWinner(match.id, 'A')}
+              ariaLabel={`Force declare ${nameA} as winner`}
+            >
+              🏆 {nameA}
+            </Btn>
+            <Btn
+              variant="ghost"
+              size="sm"
+              onClick={() => onMarkWinner(match.id, 'B')}
+              ariaLabel={`Force declare ${nameB} as winner`}
+            >
+              🏆 {nameB}
+            </Btn>
+          </>
         )}
       </div>
 
