@@ -10,12 +10,14 @@ export { default as RosterScreen } from './RosterScreen';
 export { default as SetupScreen } from './SetupScreen';
 export { default as ChampionScreen } from './ChampionScreen';
 export { default as TrainingScreen } from './TrainingScreen';
+export { default as ContactScreen } from './ContactScreen';
 
 // Lazy exports for code-splitting (use with React.Suspense)
 export { default as RosterScreenLazy } from './RosterScreen';
 export { default as SetupScreenLazy } from './SetupScreen';
 export { default as ChampionScreenLazy } from './ChampionScreen';
 export { default as TrainingScreenLazy } from './TrainingScreen';
+export { default as ContactScreenLazy } from './ContactScreen';
 
 // TODO: Extract these complex screens from pages/index.tsx
 // export { default as TournamentScreen } from './TournamentScreen';

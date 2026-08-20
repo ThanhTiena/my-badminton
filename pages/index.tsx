@@ -27,6 +27,7 @@ import Scoreboard, { isWinner as isBadmintonWinner } from '@/components/Scoreboa
 // Other screens (Setup, Champion, Training) still have originals below for Phase 1.
 // Phase 2 will remove all originals and use only extracted versions.
 import RosterScreen from '@/components/screens/RosterScreen';
+import ContactScreen from '@/components/screens/ContactScreen';
 // import SetupScreen from '@/components/screens/SetupScreen';  // Original still below
 // import ChampionScreen from '@/components/screens/ChampionScreen';  // Original still below
 // import TrainingScreen from '@/components/screens/TrainingScreen';  // Original still below
@@ -34,7 +35,7 @@ import RosterScreen from '@/components/screens/RosterScreen';
 // Court Design System Components (Step 2: Primitive Components)
 // import { Button, Badge, PlayerTile, StatCard } from '@/components';
 
-type AppView = 'roster' | 'setup' | 'tournament' | 'champion' | 'history' | 'rankings' | 'payment' | 'bets' | 'analytics' | 'venues' | 'pricing' | 'attendance' | 'training';
+type AppView = 'roster' | 'setup' | 'tournament' | 'champion' | 'history' | 'rankings' | 'payment' | 'bets' | 'analytics' | 'venues' | 'pricing' | 'attendance' | 'training' | 'contact';
 
 const INITIAL_TOURNEY: TournamentState = {
   pros: [], beginners: [], teams: [],
@@ -5913,6 +5914,7 @@ export default function TournamentApp() {
     view === 'bets'       ? 'Bets'       :
     view === 'attendance' ? 'Attendance' :
     view === 'training'   ? 'Training'   :
+    view === 'contact'    ? 'Join Club'  :
     view === 'champion'   ? 'Finished'   :
     view === 'setup'      ? 'Setup'      :
     (getCurrentRound(tourney)?.name ?? 'Finished');
@@ -5945,6 +5947,7 @@ export default function TournamentApp() {
         { id: 'roster',    icon: '👥', label: 'Players', hostOnly: true },
         { id: 'rankings',  icon: '🏅', label: 'Rankings' },
         { id: 'history',   icon: '📜', label: 'History' },
+        { id: 'contact',   icon: '✉️', label: 'Join Club' },
       ],
     },
     {
@@ -6202,6 +6205,9 @@ export default function TournamentApp() {
           )}
           {view === 'attendance' && (
             <AttendanceScreen onBack={() => setView(tourney.rounds.length > 0 ? (tourney.champion ? 'champion' : 'tournament') : 'roster')} />
+          )}
+          {view === 'contact' && (
+            <ContactScreen onBack={() => setView(tourney.rounds.length > 0 ? (tourney.champion ? 'champion' : 'tournament') : 'roster')} />
           )}
           {view === 'training' && (
             <div className="anim-fade">
